@@ -61,6 +61,8 @@ val ctx_length : context -> int
 val add_binding : context -> binding -> context
 
 val shift_term : int -> term -> term
+val shift_pat : int -> pat -> pat
 val shift_type : int -> ty -> ty
-val shift_index : int -> index -> index
 val shift_sort : int -> sort -> sort
+val shift_prop : int -> prop -> prop
+val shift_index : int -> index -> index
