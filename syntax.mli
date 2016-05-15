@@ -23,7 +23,6 @@ type ty =
   | TyArrow of ty * ty
   | TyDepUni of string * sort * ty
   | TyDepExi of string * sort * ty
-  | TyDepApp of ty * index
 
 type pat =
   | PtWild
