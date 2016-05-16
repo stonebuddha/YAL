@@ -17,7 +17,7 @@ type sort =
 
 type ty =
   | TyInt of index
-  | TyBool of index
+  | TyBool
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
@@ -39,7 +39,7 @@ type term =
   | TmUnit
   | TmPair of term * term
   | TmIf of term * term * term
-  | TmCase of term * (pat * term) list
+  | TmCase of term * (pat * int * term) list
   | TmAbs of string * ty * term
   | TmApp of term * term
   | TmLet of string * term * term
@@ -58,9 +58,9 @@ type context
 val empty_ctx : context
 val ctx_length : context -> int
 val add_binding : context -> binding -> context
+val get_binding : context -> int -> binding
 
 val shift_term : int -> term -> term
-val shift_pat : int -> pat -> pat
 val shift_type : int -> ty -> ty
 val shift_sort : int -> sort -> sort
 val shift_prop : int -> prop -> prop
