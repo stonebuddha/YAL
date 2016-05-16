@@ -164,6 +164,17 @@ let shift_prop d pr = shift_prop_above d 0 pr
 
 let shift_index d id = shift_index_above d 0 id
 
+let subst_term_in_term j s tm =
+  tmmap
+    (fun j x n -> if x = j then shift_term j s else TmVar (x, n))
+    (fun j ty -> ty)
+    (fun j id -> id)
+    (fun j sr -> sr)
+    j tm
+
+let subst_term_in_term_top s tm =
+  shift_term (-1) (subst_term_in_term 0 (shift_term 1 s) tm)
+
 let shift_binding d bd =
   match bd with
   | BdType (x, ty) -> BdType (x, shift_type d ty)

@@ -65,3 +65,6 @@ val shift_type : int -> ty -> ty
 val shift_sort : int -> sort -> sort
 val shift_prop : int -> prop -> prop
 val shift_index : int -> index -> index
+
+val subst_term_in_term : int -> term -> term -> term
+val subst_term_in_term_top : term -> term -> term
