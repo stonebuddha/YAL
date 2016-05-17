@@ -1,3 +1,7 @@
+open Support.Pervasive
+open Support.Error
+open Format
+
 type index =
   | IdVar of int * int
   | IdInt of int
@@ -50,17 +54,47 @@ type term =
   | TmDepLet of string * string * term * term
 
 type binding =
-  | BdType of string * ty
-  | BdSort of string * sort
+  | NameBind
+  | BdType of ty
+  | BdSort of sort
   | BdProp of prop
 
-type context = binding list
+type context = (string * binding) list
 
 let empty_ctx = []
 
 let ctx_length ctx = List.length ctx
 
-let add_binding ctx bind = bind :: ctx
+let add_binding ctx x bind = (x,bind)::ctx
+
+let add_name ctx x = add_binding ctx x NameBind
+
+let rec is_name_bound ctx x =
+  match ctx with
+      [] -> false
+    | (y,_)::rest ->
+        if y=x then true
+        else is_name_bound rest x
+
+let rec pick_freshname ctx x =
+  if is_name_bound ctx x then pick_freshname ctx (x^"'")
+  else ((x,NameBind)::ctx), x
+
+let index2name ctx x =
+  try
+    let (xn,_) = List.nth ctx x in
+    xn
+  with Failure _ ->
+    let msg =
+      Printf.sprintf "Variable lookup failure: offset: %d, ctx size: %d" in
+    error (msg x (List.length ctx))
+
+let rec name2index ctx x =
+  match ctx with
+      [] -> error ("Identifier " ^ x ^ " is unbound")
+    | (y,_)::rest ->
+        if y=x then 0
+        else 1 + (name2index rest x)
 
 let tmmap onvar ontype onindex onsort c tm =
   let rec walk c tm =
@@ -175,10 +209,134 @@ let subst_term_in_term j s tm =
 let subst_term_in_term_top s tm =
   shift_term (-1) (subst_term_in_term 0 (shift_term 1 s) tm)
 
+let subst_index_in_term j s tm =
+  tm
+
+let subst_index_in_term_top s tm = 
+  shift_term (-1) (subst_index_in_term 0 (shift_index 1 s) tm)
+
 let shift_binding d bd =
   match bd with
-  | BdType (x, ty) -> BdType (x, shift_type d ty)
-  | BdSort (a, sr) -> BdSort (a, shift_sort d sr)
+  | NameBind -> NameBind
+  | BdType (ty) -> BdType (shift_type d ty)
+  | BdSort (sr) -> BdSort (shift_sort d sr)
   | BdProp (pr) -> BdProp (shift_prop d pr)
 
-let get_binding ctx i = shift_binding (i + 1) (List.nth ctx i)
+let rec get_binding ctx i =
+  try
+    let (_,bind) = List.nth ctx i in
+    shift_binding (i+1) bind 
+  with Failure _ ->
+    let msg =
+      Printf.sprintf "Variable lookup failure: offset: %d, ctx size: %d" in
+    error (msg i (List.length ctx))
+
+(* ---------------------------------------------------------------------- *)
+(* Printing *)
+
+let obox0() = open_hvbox 0
+let obox() = open_hvbox 2
+let cbox() = close_box()
+let break() = print_break 0 0
+
+let small t = 
+  match t with
+    TmVar(_,_) -> true
+  | _ -> false
+
+(* let rec printty_Type outer ctx tyT = match tyT with
+      tyT -> printty_ArrowType outer ctx tyT
+
+and printty_ArrowType outer ctx  tyT = match tyT with 
+    TyArrow(tyT1,tyT2) ->
+      obox0(); 
+      printty_AType false ctx tyT1;
+      if outer then pr " ";
+      pr "->";
+      if outer then print_space() else break();
+      printty_ArrowType outer ctx tyT2;
+      cbox()
+  | tyT -> printty_AType outer ctx tyT
+
+and printty_ProductType outer ctx tyT = match tyT with
+    TyProduct(tyT1, tyT2) ->
+
+
+and printty_AType outer ctx tyT = match tyT with
+  | TyBool -> pr "Bool"
+  | TyUnit -> pr "Unit"
+  | TyInt -> pr "Int"
+  | tyT -> pr "("; printty_Type outer ctx tyT; pr ")"
+
+let printty ctx tyT = printty_Type true ctx tyT *) 
+
+let printty_Type outer ctx tyT = pr "T"
+
+let prints_Sort outer ctx srS = pr "S"
+
+let printty ctx tyT = printty_Type true ctx tyT
+
+let rec printtm_Term outer ctx t = match t with
+    TmIf(t1, t2, t3) ->
+       obox0();
+       pr "if ";
+       printtm_Term false ctx t1;
+       print_space();
+       pr "then ";
+       printtm_Term false ctx t2;
+       print_space();
+       pr "else ";
+       printtm_Term false ctx t3;
+       cbox()
+  | TmAbs(x,tyT1,t2) ->
+      (let (ctx',x') = (pick_freshname ctx x) in
+         obox(); pr "lambda ";
+         pr x'; pr ":"; printty_Type false ctx tyT1; pr ".";
+         if (small t2) && not outer then break() else print_space();
+         printtm_Term outer ctx' t2;
+         cbox())
+  | TmLet(x, t1, t2) ->
+       obox0();
+       pr "let "; pr x; pr " = "; 
+       printtm_Term false ctx t1;
+       print_space(); pr "in"; print_space();
+       printtm_Term false (add_name ctx x) t2;
+       cbox()
+  | TmFix(x,tyT1,t1) ->
+       obox();
+       pr "fix ";
+       pr x;
+       pr ":";
+       printty_Type false ctx tyT1;
+       pr "."; 
+       printtm_Term false ctx t1;
+       cbox()
+  | t -> printtm_AppTerm outer ctx t
+
+and printtm_AppTerm outer ctx t = match t with
+    TmApp(t1, t2) ->
+      obox0();
+      printtm_AppTerm false ctx t1;
+      print_space();
+      printtm_ATerm false ctx t2;
+      cbox()
+  | t -> printtm_ATerm outer ctx t
+
+and printtm_ATerm outer ctx t = match t with
+  | TmBool(true) -> pr "true"
+  | TmBool(false) -> pr "false"
+  | TmInt(i) -> pr (string_of_int i)
+  | TmVar(x,n) ->
+      if ctx_length ctx = n then
+        pr (index2name ctx x)
+      else
+        pr ("[bad index: " ^ (string_of_int x) ^ "/" ^ (string_of_int n)
+            ^ " in {"
+            ^ (List.fold_left (fun s (x,_) -> s ^ " " ^ x) "" ctx)
+            ^ " }]")
+  | TmUnit -> pr "unit"
+  | t -> pr "("; printtm_Term outer ctx t; pr ")"
+
+let printtm ctx t = printtm_Term true ctx t 
+
+

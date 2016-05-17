@@ -50,14 +50,15 @@ type term =
   | TmDepLet of string * string * term * term
 
 type binding =
-  | BdType of string * ty
-  | BdSort of string * sort
+  | NameBind
+  | BdType of ty
+  | BdSort of sort
   | BdProp of prop
 
 type context
 val empty_ctx : context
 val ctx_length : context -> int
-val add_binding : context -> binding -> context
+val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
 
 val shift_term : int -> term -> term
@@ -68,3 +69,7 @@ val shift_index : int -> index -> index
 
 val subst_term_in_term : int -> term -> term -> term
 val subst_term_in_term_top : term -> term -> term
+(* val subst_index_in_term : int -> index -> term -> term *)
+val subst_index_in_term_top : index -> term -> term
+
+val printtm : context -> term -> unit
