@@ -69,7 +69,15 @@ val shift_index : int -> index -> index
 
 val subst_term_in_term : int -> term -> term -> term
 val subst_term_in_term_top : term -> term -> term
-(* val subst_index_in_term : int -> index -> term -> term *)
+val subst_index_in_index : int -> index -> index -> index
+val subst_index_in_index_top : index -> index -> index
+val subst_index_in_prop : int -> index -> prop -> prop
+val subst_index_in_prop_top : index -> prop -> prop
+val subst_index_in_sort : int -> index -> sort -> sort
+val subst_index_in_sort_top : index -> sort -> sort
+val subst_index_in_type : int -> index -> ty -> ty
+val subst_index_in_type_top : index -> ty -> ty
+val subst_index_in_term : int -> index -> term -> term
 val subst_index_in_term_top : index -> term -> term
 
 val printtm : context -> term -> unit

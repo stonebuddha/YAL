@@ -209,10 +209,48 @@ let subst_term_in_term j s tm =
 let subst_term_in_term_top s tm =
   shift_term (-1) (subst_term_in_term 0 (shift_term 1 s) tm)
 
-let subst_index_in_term j s tm =
-  tm
+let subst_index_in_index j s id =
+  idmap
+    (fun j a n -> if a = j then shift_index j s else IdVar (a, n))
+    j id
 
-let subst_index_in_term_top s tm = 
+let subst_index_in_index_top s id =
+  shift_index (-1) (subst_index_in_index 0 (shift_index 1 s) id)
+
+let subst_index_in_prop j s pr =
+  prmap
+    (fun j id -> subst_index_in_index j s id)
+    j pr
+
+let subst_index_in_prop_top s pr =
+  shift_prop (-1) (subst_index_in_prop 0 (shift_index 1 s) pr)
+
+let subst_index_in_sort j s sr =
+  srmap
+    (fun j pr -> subst_index_in_prop j s pr)
+    j sr
+
+let subst_index_in_sort_top s sr =
+  shift_sort (-1) (subst_index_in_sort 0 (shift_index 1 s) sr)
+
+let subst_index_in_type j s ty =
+  tymap
+    (fun j id -> subst_index_in_index j s id)
+    (fun j sr -> subst_index_in_sort j s sr)
+    j ty
+
+let subst_index_in_type_top s ty =
+  shift_type (-1) (subst_index_in_type 0 (shift_index 1 s) ty)
+
+let subst_index_in_term j s tm =
+  tmmap
+    (fun j x n -> TmVar (x, n))
+    (fun j ty -> subst_index_in_type j s ty)
+    (fun j id -> subst_index_in_index j s id)
+    (fun j sr -> subst_index_in_sort j s sr)
+    j tm
+
+let subst_index_in_term_top s tm =
   shift_term (-1) (subst_index_in_term 0 (shift_index 1 s) tm)
 
 let shift_binding d bd =
@@ -225,7 +263,7 @@ let shift_binding d bd =
 let rec get_binding ctx i =
   try
     let (_,bind) = List.nth ctx i in
-    shift_binding (i+1) bind 
+    shift_binding (i+1) bind
   with Failure _ ->
     let msg =
       Printf.sprintf "Variable lookup failure: offset: %d, ctx size: %d" in
@@ -239,7 +277,7 @@ let obox() = open_hvbox 2
 let cbox() = close_box()
 let break() = print_break 0 0
 
-let small t = 
+let small t =
   match t with
     TmVar(_,_) -> true
   | _ -> false
@@ -247,9 +285,9 @@ let small t =
 (* let rec printty_Type outer ctx tyT = match tyT with
       tyT -> printty_ArrowType outer ctx tyT
 
-and printty_ArrowType outer ctx  tyT = match tyT with 
+and printty_ArrowType outer ctx  tyT = match tyT with
     TyArrow(tyT1,tyT2) ->
-      obox0(); 
+      obox0();
       printty_AType false ctx tyT1;
       if outer then pr " ";
       pr "->";
@@ -268,7 +306,7 @@ and printty_AType outer ctx tyT = match tyT with
   | TyInt -> pr "Int"
   | tyT -> pr "("; printty_Type outer ctx tyT; pr ")"
 
-let printty ctx tyT = printty_Type true ctx tyT *) 
+let printty ctx tyT = printty_Type true ctx tyT *)
 
 let printty_Type outer ctx tyT = pr "T"
 
@@ -297,7 +335,7 @@ let rec printtm_Term outer ctx t = match t with
          cbox())
   | TmLet(x, t1, t2) ->
        obox0();
-       pr "let "; pr x; pr " = "; 
+       pr "let "; pr x; pr " = ";
        printtm_Term false ctx t1;
        print_space(); pr "in"; print_space();
        printtm_Term false (add_name ctx x) t2;
@@ -308,7 +346,7 @@ let rec printtm_Term outer ctx t = match t with
        pr x;
        pr ":";
        printty_Type false ctx tyT1;
-       pr "."; 
+       pr ".";
        printtm_Term false ctx t1;
        cbox()
   | t -> printtm_AppTerm outer ctx t
@@ -337,6 +375,4 @@ and printtm_ATerm outer ctx t = match t with
   | TmUnit -> pr "unit"
   | t -> pr "("; printtm_Term outer ctx t; pr ")"
 
-let printtm ctx t = printtm_Term true ctx t 
-
-
+let printtm ctx t = printtm_Term true ctx t
