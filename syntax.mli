@@ -26,7 +26,7 @@ type ty =
 
 type pat =
   | PtWild
-  | PtVar of int * int
+  | PtVar of string
   | PtInt of int
   | PtBool of bool
   | PtUnit
