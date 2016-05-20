@@ -21,8 +21,8 @@ type ty =
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
-  | TyDepUni of string * sort * ty
-  | TyDepExi of string * sort * ty
+  | TyDepUni of sort * ty
+  | TyDepExi of sort * ty
 
 type pat =
   | PtWild
@@ -60,6 +60,7 @@ val empty_ctx : context
 val ctx_length : context -> int
 val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
+val get_type_from_context : context -> int -> ty
 
 val shift_term : int -> term -> term
 val shift_type : int -> ty -> ty

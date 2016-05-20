@@ -1,4 +1,6 @@
 open Syntax
+open Support.Pervasive
+open Support.Error
 
 exception NoRuleApplies
 exception NoMatchPattern
@@ -84,3 +86,122 @@ let rec eval ctx tm =
     let tm' = eval1 ctx tm in eval ctx tm'
   with
   | NoRuleApplies -> tm
+
+(* ------------------------   TYPING  ------------------------ *)
+
+exception NotConsistent
+exception EmptyCase
+
+let rec sreqv ctx srS srT =
+  true
+
+let rec ideqv ctx idS idT =
+  true
+
+let rec tyeqv ctx tyS tyT =
+  match (tyS,tyT) with
+  | (TyUnit,TyUnit) -> true
+  | (TyArrow(tyS1,tyS2),TyArrow(tyT1,tyT2)) ->
+       (tyeqv ctx tyS1 tyT1) && (tyeqv ctx tyS2 tyT2)
+  | (TyBool,TyBool) -> true
+  | (TyInt(id1), TyInt(id2)) ->
+      ideqv ctx id1 id2
+  | (TyProduct(tyS1,tyS2),TyProduct(tyT1,tyT2)) ->
+      (tyeqv ctx tyS1 tyT1) && (tyeqv ctx tyS2 tyT2)
+  | (TyDepExi(sr1,ty1), TyDepExi(sr2,ty2)) ->
+      (sreqv ctx sr1 sr2) && (tyeqv ctx ty1 ty2)
+  | (TyDepUni(sr1,ty1), TyDepUni(sr2,ty2)) ->
+      (sreqv ctx sr1 sr2) && (tyeqv ctx ty1 ty2)
+  | _ -> false
+
+let rec patcheck ctx p tyT =
+  match p with
+  | PtInt(p1) -> 
+    if tyeqv ctx tyT (TyInt(IdInt(p1))) then true else false
+  | PtBool(p1) ->
+    if tyeqv ctx tyT TyBool then true else false
+  | PtWild -> true
+  | PtVar(_) -> true
+  | PtUnit ->
+    if tyeqv ctx tyT TyUnit then true else false
+  | PtPair(p1,p2) -> 
+    (match tyT with
+    | TyProduct(tyT1, tyT2) -> (patcheck ctx p1 tyT1) && (patcheck ctx p2 tyT2)
+    | _ -> false)
+
+let rec sortof ctx i =
+  SrInt
+
+let rec typeof ctx t =
+  match t with
+  | TmVar(i,_) -> get_type_from_context ctx i
+  | TmAbs(x,tyT1,t2) ->
+      let ctx' = add_binding ctx x (BdType(tyT1)) in
+      let tyT2 = typeof ctx' t2 in
+      TyArrow(tyT1, shift_type (-1) tyT2)
+  | TmApp(t1,t2) ->
+      let tyT1 = typeof ctx t1 in
+      let tyT2 = typeof ctx t2 in
+      (match tyT1 with
+      | TyArrow(tyT11,tyT12) ->
+        if tyeqv ctx tyT2 tyT11 then tyT12
+        else error "parameter type mismatch"
+      | _ -> error "arrow type expected")
+  | TmBool(_) -> 
+      TyBool
+  | TmIf(t1,t2,t3) ->
+      if tyeqv ctx (typeof ctx t1) TyBool then
+        let tyT2 = typeof ctx t2 in
+        if tyeqv ctx tyT2 (typeof ctx t3) then tyT2
+        else error "arms of conditional have different types"
+      else error "guard of conditional not a boolean"
+  | TmLet(x,t1,t2) ->
+     let tyT1 = typeof ctx t1 in
+     let ctx' = add_binding ctx x (BdType(tyT1)) in         
+     shift_type (-1) (typeof ctx' t2)
+  | TmCase(t, cases) ->
+      let tyT = typeof ctx t in
+      (try
+        let rec inner branch =
+          (match branch with
+          | [] -> raise Not_found
+          | (p,_,_)::rest->
+            if patcheck ctx p tyT then () else inner rest)
+        in inner cases;
+        try
+          let rec consistent branch =
+            match branch with
+            | [] -> raise EmptyCase
+            | (_,_,clause)::[] -> typeof ctx clause
+            | (_,_,clause)::rest ->
+                let tyT1 = typeof ctx clause in
+                let otherT = consistent rest in
+                if tyeqv ctx tyT1 otherT then tyT1 else raise NotConsistent
+          in consistent cases
+        with 
+        | EmptyCase -> error "the body of case is empty"
+        | NotConsistent -> error "types are not consistent in case branches"
+      with Not_found -> error "no pattern matches with the term")
+  | TmFix(x, tyT, t1) ->
+      let tyT1 = typeof ctx t1 in
+        (match tyT with 
+           TyArrow(_,_) ->
+             if tyeqv ctx tyT tyT1 then tyT
+             else error "result of body not compatible with domain"
+         | _ -> error "arrow type expected")
+  | TmUnit -> TyUnit
+  | TmInt(it) -> TyInt(IdInt(it))
+  | TmPair(t1,t2) ->
+      TyProduct(typeof ctx t1, typeof ctx t2)
+  | TmDepAbs(x,sr1,t2) ->
+      let ctx' = add_binding ctx x (BdSort(sr1)) in
+      let tyT2 = typeof ctx' t2 in
+      TyDepUni(sr1, shift_type (-1) tyT2)
+  | TmDepApp(t1,id2) ->
+      let tyT1 = typeof ctx t1 in
+      let sr2 = sortof ctx id2 in
+      (match tyT1 with
+          TyDepUni(sr11,tyT12) ->
+          if sreqv ctx sr11 sr2 then subst_index_in_type_top id2 tyT12
+          else error "parameter type mismatch"
+          | _ -> error "dependent universal type expected")

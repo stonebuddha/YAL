@@ -25,8 +25,8 @@ type ty =
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
-  | TyDepUni of string * sort * ty
-  | TyDepExi of string * sort * ty
+  | TyDepUni of sort * ty
+  | TyDepExi of sort * ty
 
 type pat =
   | PtWild
@@ -125,8 +125,8 @@ let tymap onindex onsort c ty =
     | TyUnit as ty -> ty
     | TyProduct (ty1, ty2) -> TyProduct (walk c ty1, walk c ty2)
     | TyArrow (ty1, ty2) -> TyArrow (walk c ty1, walk c ty2)
-    | TyDepUni (a, sr, ty1) -> TyDepUni (a, onsort c sr, walk (c + 1) ty1)
-    | TyDepExi (a, sr, ty1) -> TyDepExi (a, onsort c sr, walk (c + 1) ty1)
+    | TyDepUni (sr, ty1) -> TyDepUni (onsort c sr, walk (c + 1) ty1)
+    | TyDepExi (sr, ty1) -> TyDepExi (onsort c sr, walk (c + 1) ty1)
   in
     walk c ty
 
@@ -268,6 +268,13 @@ let rec get_binding ctx i =
     let msg =
       Printf.sprintf "Variable lookup failure: offset: %d, ctx size: %d" in
     error (msg i (List.length ctx))
+
+let get_type_from_context ctx i =
+   match get_binding ctx i with
+         BdType(tyT) -> tyT
+     | _ -> error
+       ("get_type_from_context: Wrong kind of binding for variable " 
+         ^ (index2name ctx i)) 
 
 (* ---------------------------------------------------------------------- *)
 (* Printing *)
