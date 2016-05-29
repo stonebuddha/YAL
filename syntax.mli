@@ -76,6 +76,8 @@ val ctx_length : context -> int
 val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
 val get_type_from_context : context -> int -> ty
+val name2index : context -> string -> int
+val add_name : context -> string -> context
 
 val shift_type_above : int -> int -> ty -> ty
 

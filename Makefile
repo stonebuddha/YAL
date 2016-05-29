@@ -1,4 +1,4 @@
-OCB_FLAGS = -use-ocamlfind
+OCB_FLAGS = -use-ocamlfind -use-menhir
 OCB = ocamlbuild $(OCB_FLAGS)
 
 all: native byte
