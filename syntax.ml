@@ -25,8 +25,8 @@ type ty =
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
-  | TyDepUni of sort * ty
-  | TyDepExi of sort * ty
+  | TyDepUni of string * sort * ty
+  | TyDepExi of string * sort * ty
 
 type pat =
   | PtWild
@@ -50,8 +50,23 @@ type term =
   | TmFix of string * ty * term
   | TmDepAbs of string * sort * term
   | TmDepApp of term * index
-  | TmDepPair of index * sort * term
+  | TmDepPair of index * term * ty
   | TmDepLet of string * string * term * term
+
+type formula =
+  | FmVar of int
+  | FmIntConst of int
+  | FmAdd of formula * formula
+  | FmTrue
+  | FmFalse
+  | FmAnd of formula list
+  | FmOr of formula list
+  | FmNot of formula
+  | FmLe of formula * formula
+  | FmUni of (int list) * formula
+  | FmExi of (int list) * formula
+  | FmEq of formula * formula
+  | FmImply of formula * formula
 
 type binding =
   | NameBind
@@ -112,7 +127,7 @@ let tmmap onvar ontype onindex onsort c tm =
     | TmFix (f, tyf, tm1) -> TmFix (f, ontype c tyf, walk (c + 1) tm1)
     | TmDepAbs (a, sr, tm1) -> TmDepAbs (a, onsort c sr, walk (c + 1) tm1)
     | TmDepApp (tm1, id) -> TmDepApp (walk c tm1, onindex c id)
-    | TmDepPair (id, sr, tm1) -> TmDepPair (onindex c id, onsort c sr, walk c tm1)
+    | TmDepPair (id, tm1, ty) -> TmDepPair (onindex c id, walk c tm1, ontype c ty)
     | TmDepLet (a, x, tm1, tm2) -> TmDepLet (a, x, walk c tm1, walk (c + 2) tm2)
   in
     walk c tm
@@ -125,8 +140,8 @@ let tymap onindex onsort c ty =
     | TyUnit as ty -> ty
     | TyProduct (ty1, ty2) -> TyProduct (walk c ty1, walk c ty2)
     | TyArrow (ty1, ty2) -> TyArrow (walk c ty1, walk c ty2)
-    | TyDepUni (sr, ty1) -> TyDepUni (onsort c sr, walk (c + 1) ty1)
-    | TyDepExi (sr, ty1) -> TyDepExi (onsort c sr, walk (c + 1) ty1)
+    | TyDepUni (x, sr, ty1) -> TyDepUni (x, onsort c sr, walk (c + 1) ty1)
+    | TyDepExi (x, sr, ty1) -> TyDepExi (x, onsort c sr, walk (c + 1) ty1)
   in
     walk c ty
 
@@ -159,9 +174,28 @@ let prmap onindex c pr =
   in
     walk c pr
 
+let fmmap onvar c fm =
+  let rec walk c fm =
+    match fm with
+    | FmVar(i) -> onvar c i
+    | FmIntConst(_) -> fm
+    | FmAdd(fm1,fm2) -> FmAdd(walk c fm1, walk c fm2)
+    | FmTrue -> fm
+    | FmFalse -> fm
+    | FmAnd(args) -> FmAnd(List.map (fun fm1 -> walk c fm1) args)
+    | FmOr(args) -> FmOr(List.map (fun fm1 -> walk c fm1) args)
+    | FmNot(fm1) -> FmNot(walk c fm1)
+    | FmUni(args,fm1) -> FmUni(args, walk (c + 1) fm1)
+    | FmExi(args,fm1) -> FmExi(args, walk (c + 1) fm1)
+    | FmEq(fm1, fm2) -> FmEq(walk c fm1, walk c fm2)
+    | FmImply(fm1, fm2) -> FmImply(walk c fm1, walk c fm2)
+    | FmLe(fm1, fm2) -> FmLe(walk c fm1, walk c fm2)
+  in 
+    walk c fm
+
 let shift_index_above d c id =
   idmap
-    (fun c a n -> if a >= n then IdVar (a + d, n + d) else IdVar (a, n + d))
+    (fun c a n -> if a >= c then IdVar (a + d, n + d) else IdVar (a, n + d))
     c id
 
 let shift_prop_above d c pr =
@@ -188,6 +222,11 @@ let shift_term_above d c tm =
     (shift_sort_above d)
     c tm
 
+let shift_formula_above d c fm = 
+  fmmap
+    (fun c a -> if a >= c then FmVar(a + d) else FmVar(a))
+    c fm
+
 let shift_term d tm = shift_term_above d 0 tm
 
 let shift_type d ty = shift_type_above d 0 ty
@@ -197,6 +236,8 @@ let shift_sort d sr = shift_sort_above d 0 sr
 let shift_prop d pr = shift_prop_above d 0 pr
 
 let shift_index d id = shift_index_above d 0 id
+
+let shift_formula d fm = shift_formula_above d 0 fm
 
 let subst_term_in_term j s tm =
   tmmap
@@ -383,3 +424,47 @@ and printtm_ATerm outer ctx t = match t with
   | t -> pr "("; printtm_Term outer ctx t; pr ")"
 
 let printtm ctx t = printtm_Term true ctx t
+
+let rec print_formula fm =
+  match fm with
+  | FmVar(i) -> pr "[";pr (string_of_int i);pr "]"
+  | FmIntConst(i) -> pr (string_of_int i)
+  | FmAdd(fm1,fm2) -> pr "(";print_formula fm1;pr " + ";print_formula fm2;pr ")"
+  | FmTrue -> pr "true"
+  | FmFalse -> pr "false"
+  | FmAnd(fms) -> 
+      pr "(";
+      let fst = List.hd fms in
+      let last = List.tl fms in
+      print_formula fst;
+      (match last with
+      | [] -> error "formula AND should have at least two sub formulas"
+      | _ -> List.iter (fun x -> pr " and ";print_formula x) last;pr")")
+  | FmOr(fms) ->
+      pr "(";
+      let fst = List.hd fms in
+      let last = List.tl fms in
+      print_formula fst;
+      (match last with
+      | [] -> error "formula OR should have at least two sub formulas"
+      | _ -> List.iter (fun x -> pr " or ";print_formula x) last)
+  | FmNot(fm1) ->
+      pr "(not ";print_formula fm1;pr ")"
+  | FmLe(fm1,fm2) ->
+      pr "(";print_formula fm1;pr " < ";print_formula fm2;pr ")"
+  | FmUni(l,fm1) ->
+      pr "( for any ";
+      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]");
+      pr ".";
+      print_formula fm1;
+      pr ")"
+  | FmExi(l,fm1) ->
+      pr "( there exits ";
+      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]");
+      pr ".";
+      print_formula fm1;
+      pr ")"
+  | FmEq(fm1,fm2) ->
+      pr "(";print_formula fm1;pr " = ";print_formula fm2;pr ")"
+  | FmImply(fm1,fm2) ->
+      pr "(";print_formula fm1;pr " => ";print_formula fm2;pr ")"

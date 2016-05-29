@@ -21,8 +21,8 @@ type ty =
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
-  | TyDepUni of sort * ty
-  | TyDepExi of sort * ty
+  | TyDepUni of string * sort * ty
+  | TyDepExi of string * sort * ty
 
 type pat =
   | PtWild
@@ -46,8 +46,23 @@ type term =
   | TmFix of string * ty * term
   | TmDepAbs of string * sort * term
   | TmDepApp of term * index
-  | TmDepPair of index * sort * term
+  | TmDepPair of index * term * ty
   | TmDepLet of string * string * term * term
+
+type formula =
+  | FmVar of int
+  | FmIntConst of int
+  | FmAdd of formula * formula
+  | FmTrue
+  | FmFalse
+  | FmAnd of formula list
+  | FmOr of formula list
+  | FmNot of formula
+  | FmLe of formula * formula
+  | FmUni of (int list) * formula
+  | FmExi of (int list) * formula
+  | FmEq of formula * formula
+  | FmImply of formula * formula
 
 type binding =
   | NameBind
@@ -62,11 +77,14 @@ val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
 val get_type_from_context : context -> int -> ty
 
+val shift_type_above : int -> int -> ty -> ty
+
 val shift_term : int -> term -> term
 val shift_type : int -> ty -> ty
 val shift_sort : int -> sort -> sort
 val shift_prop : int -> prop -> prop
 val shift_index : int -> index -> index
+val shift_formula : int -> formula -> formula
 
 val subst_term_in_term : int -> term -> term -> term
 val subst_term_in_term_top : term -> term -> term
@@ -82,3 +100,4 @@ val subst_index_in_term : int -> index -> term -> term
 val subst_index_in_term_top : index -> term -> term
 
 val printtm : context -> term -> unit
+val print_formula : formula -> unit
