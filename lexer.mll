@@ -37,6 +37,8 @@ rule read =
   | "["               { LSQUARE }
   | "]"               { RSQUARE }
   | "+"               { PLUS }
+  | "-"               { MINUS }
+  | "/"               { DIV }
   | "~"               { TILDE }
   | "<="              { LEQ }
   | "<"               { LT }

@@ -6,6 +6,9 @@ type index =
   | IdVar of int * int
   | IdInt of int
   | IdAdd of index * index
+  | IdSub of index * index
+  | IdMul of index * index
+  | IdDiv of index * index
 
 type prop =
   | PrTrue
@@ -151,6 +154,9 @@ let idmap onvar c id =
     | IdVar (a, n) -> onvar c a n
     | IdInt (i) as id -> id
     | IdAdd (id1, id2) -> IdAdd (walk c id1, walk c id2)
+    | IdSub (id1, id2) -> IdSub (walk c id1, walk c id2)
+    | IdMul (id1, id2) -> IdMul (walk c id1, walk c id2)
+    | IdDiv (id1, id2) -> IdDiv (walk c id1, walk c id2)
   in
     walk c id
 
@@ -190,7 +196,7 @@ let fmmap onvar c fm =
     | FmEq(fm1, fm2) -> FmEq(walk c fm1, walk c fm2)
     | FmImply(fm1, fm2) -> FmImply(walk c fm1, walk c fm2)
     | FmLe(fm1, fm2) -> FmLe(walk c fm1, walk c fm2)
-  in 
+  in
     walk c fm
 
 let shift_index_above d c id =
@@ -222,7 +228,7 @@ let shift_term_above d c tm =
     (shift_sort_above d)
     c tm
 
-let shift_formula_above d c fm = 
+let shift_formula_above d c fm =
   fmmap
     (fun c a -> if a >= c then FmVar(a + d) else FmVar(a))
     c fm
@@ -314,8 +320,8 @@ let get_type_from_context ctx i =
    match get_binding ctx i with
          BdType(tyT) -> tyT
      | _ -> error
-       ("get_type_from_context: Wrong kind of binding for variable " 
-         ^ (index2name ctx i)) 
+       ("get_type_from_context: Wrong kind of binding for variable "
+         ^ (index2name ctx i))
 
 (* ---------------------------------------------------------------------- *)
 (* Printing *)
@@ -466,13 +472,16 @@ and printtm_ATerm outer ctx t = match t with
 
 let printtm ctx t = printtm_Term true ctx t *)
 
-let rec printid id = 
+let rec printid id =
   match id with
   | IdVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
   | IdInt(i) -> pr " ";print_int i;pr " "
   | IdAdd(id1,id2) -> pr " ";printid id1;pr "+";printid id2;pr " "
+  | IdSub(id1,id2) -> pr " ";printid id1;pr "-";printid id2;pr " "
+  | IdMul(id1,id2) -> pr " ";printid id1;pr "*";printid id2;pr " "
+  | IdDiv(id1,id2) -> pr " ";printid id1;pr "/";printid id2;pr " "
 
-let rec printpr pro = 
+let rec printpr pro =
   match pro with
   | PrTrue -> pr " true "
   | PrFalse -> pr " false "
@@ -521,7 +530,7 @@ let rec printfm fm =
   | FmAdd(fm1,fm2) -> pr "(";printfm fm1;pr " + ";printfm fm2;pr ")"
   | FmTrue -> pr "true"
   | FmFalse -> pr "false"
-  | FmAnd(fms) -> 
+  | FmAnd(fms) ->
       pr "(";
       let fst = List.hd fms in
       let last = List.tl fms in
@@ -562,13 +571,16 @@ let rec printfm fm =
 
 
 
-let rec print_raw_index id = 
+let rec print_raw_index id =
   match id with
   | IdVar(x,n) -> pr "IdVar(";print_int x;pr ",";print_int n;pr ")"
   | IdInt(i) -> pr "IdInt(";print_int i;pr ")"
   | IdAdd(id1,id2) -> pr "IdAdd(";print_raw_index id1;pr ",";print_raw_index id2;pr ")"
+  | IdSub(id1,id2) -> pr "IdSub(";print_raw_index id1;pr ",";print_raw_index id2;pr ")"
+  | IdMul(id1,id2) -> pr "IdMul(";print_raw_index id1;pr ",";print_raw_index id2;pr ")"
+  | IdDiv(id1,id2) -> pr "IdDiv(";print_raw_index id1;pr ",";print_raw_index id2;pr ")"
 
-let rec print_raw_prop pro = 
+let rec print_raw_prop pro =
   match pro with
   | PrTrue -> pr "PrTrue"
   | PrFalse -> pr "PrFalse"
@@ -609,3 +621,13 @@ let rec print_raw t =
   | TmDepApp(t1,id) -> pr "TmDepApp(";print_raw t1;pr ",";print_raw_index id;pr ")"
   | TmDepPair(id,t1,ty) -> pr "TmDepPair(";print_raw_index id;pr ",";print_raw t1;pr ",";print_raw_type ty;pr ")"
   | TmDepLet(x1,x2,t1,t2) -> pr "TmDepLet(";pr x1;pr ",";pr x2;pr ",";print_raw t1;pr ",";print_raw t2;pr ")"
+
+let prelude = [
+("op+", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 2)), TyInt (IdVar (0, 2))), TyInt (IdAdd (IdVar (1, 2), IdVar (0, 2))))))));
+("op-", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 3)), TyInt (IdVar (0, 3))), TyInt (IdSub (IdVar (1, 3), IdVar (0, 3))))))));
+("op*", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 4)), TyInt (IdVar (0, 4))), TyInt (IdMul (IdVar (1, 4), IdVar (0, 4))))))));
+("op/", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 5)), TyInt (IdVar (0, 5))), TyInt (IdDiv (IdVar (1, 5), IdVar (0, 5))))))));
+]
+
+let prelude_ctx =
+  List.fold_left (fun ctx ele -> add_binding ctx (fst ele) (BdType (snd ele))) empty_ctx prelude

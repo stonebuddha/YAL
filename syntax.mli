@@ -2,6 +2,9 @@ type index =
   | IdVar of int * int
   | IdInt of int
   | IdAdd of index * index
+  | IdSub of index * index
+  | IdMul of index * index
+  | IdDiv of index * index
 
 type prop =
   | PrTrue
@@ -78,6 +81,8 @@ val get_binding : context -> int -> binding
 val get_type_from_context : context -> int -> ty
 val name2index : context -> string -> int
 val add_name : context -> string -> context
+
+val prelude_ctx : context
 
 val shift_type_above : int -> int -> ty -> ty
 

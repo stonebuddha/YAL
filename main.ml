@@ -30,13 +30,13 @@ let parse_file fn =
   let pi = open_in fn in
   let lexbuf = Lexing.from_channel pi in
   let t = Parser.term Lexer.read lexbuf in
-    t empty_ctx
+    t prelude_ctx
 
 let process fn ctx =
 	let t = parse_file fn in
 	print_raw t;print_newline ();
-	let tyT = typeof_solved empty_ctx t in
-	let t' = eval empty_ctx t in
+	let tyT = typeof_solved prelude_ctx t in
+	let t' = eval prelude_ctx t in
   	printtm t';print_newline ();printty tyT;print_newline()
 
 let main () =

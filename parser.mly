@@ -32,6 +32,8 @@ open Syntax
 %token LT
 %token GT
 %token PLUS
+%token MINUS
+%token DIV
 %token TILDE
 %token BAR
 %token TIMES
@@ -42,8 +44,8 @@ open Syntax
 %right RIGHTARROW
 %right OR
 %right AND
-%left PLUS
-%left TIMES
+%left PLUS MINUS
+%left TIMES DIV
 %left TILDE
 
 %start <Syntax.context -> Syntax.term> term
@@ -57,6 +59,12 @@ index:
     { fun ctx -> IdInt (i) }
   | i1 = index; PLUS; i2 = index
      { fun ctx -> IdAdd (i1 ctx, i2 ctx) }
+  | i1 = index; MINUS; i2 = index
+    { fun ctx -> IdSub (i1 ctx, i2 ctx) }
+  | i1 = index; TIMES; i2 = index
+    { fun ctx -> IdMul (i1 ctx, i2 ctx) }
+  | i1 = index; DIV; i2 = index
+    { fun ctx -> IdDiv (i1 ctx, i2 ctx) }
   ;
 
 prop:
@@ -108,6 +116,14 @@ term:
     { fun ctx -> TmBool (true) }
   | FALSE
     { fun ctx -> TmBool (false) }
+  | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; PLUS; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
+    { fun ctx -> TmApp (TmDepApp (TmDepApp (TmVar (name2index ctx "op+", ctx_length ctx), i1 ctx), i2 ctx), TmPair (t1 ctx, t2 ctx)) }
+  | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; MINUS; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
+    { fun ctx -> TmApp (TmDepApp (TmDepApp (TmVar (name2index ctx "op-", ctx_length ctx), i1 ctx), i2 ctx), TmPair (t1 ctx, t2 ctx)) }
+  | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; TIMES; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
+    { fun ctx -> TmApp (TmDepApp (TmDepApp (TmVar (name2index ctx "op*", ctx_length ctx), i1 ctx), i2 ctx), TmPair (t1 ctx, t2 ctx)) }
+  | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; DIV; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
+    { fun ctx -> TmApp (TmDepApp (TmDepApp (TmVar (name2index ctx "op/", ctx_length ctx), i1 ctx), i2 ctx), TmPair (t1 ctx, t2 ctx)) }
   | LPAREN; RPAREN
     { fun ctx -> TmUnit }
   | LPAREN; t1 = term; COMMA; t2 = term; RPAREN
