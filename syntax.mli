@@ -101,5 +101,12 @@ val subst_index_in_type_top : index -> ty -> ty
 val subst_index_in_term : int -> index -> term -> term
 val subst_index_in_term_top : index -> term -> term
 
-val printtm : context -> term -> unit
-val print_formula : formula -> unit
+val printtm : term -> unit
+val printty : ty -> unit
+val printfm : formula -> unit
+val printid : index -> unit
+
+val print_raw : term -> unit
+val print_raw_index : index -> unit
+val print_raw_sort : sort -> unit
+val print_raw_type : ty -> unit

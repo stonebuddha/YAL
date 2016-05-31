@@ -1,95 +1,7 @@
 open Syntax
 open Support.Pervasive
 open Support.Error
-open Z3
-open Z3.Boolean
-
-exception NoRuleApplies
-exception NoMatchPattern
-
-let rec isval ctx tm =
-  match tm with
-  | TmInt (_) -> true
-  | TmBool (_) -> true
-  | TmUnit -> true
-  | TmPair (tm1, tm2) -> isval ctx tm1 && isval ctx tm2
-  | TmAbs (_, _, _) -> true
-  | TmDepAbs (_, _, _) -> true
-  | TmDepPair (_,tm1,_) -> isval ctx tm1
-  | _ -> false
-
-let rec patmatch pattern t1 t2 =
-  match pattern with
-  | PtWild -> t2
-  | PtInt(v2) -> 
-      (match t1 with
-        | TmInt(v3) when v2 = v3 -> t2
-        | _ -> raise NoMatchPattern)
-  | PtVar(_) -> subst_term_in_term_top t1 t2
-  | PtBool(v2) ->
-      (match t1 with
-        | TmBool(v3) when v2 = v3 -> t2
-        | _ -> raise NoMatchPattern)
-  | PtUnit ->
-      (match t1 with
-        | TmUnit -> t2
-        | _ -> raise NoMatchPattern)
-  | PtPair(p1,p2) ->
-      (match t1 with
-        | TmPair(tp1,tp2) ->
-            let t' = patmatch p1 tp1 t2 in
-            patmatch p2 tp2 t'
-        | _ -> raise NoMatchPattern)
-
-let rec eval1 ctx tm =
-  match tm with
-  | TmIf (TmBool (true), tm2, tm3) -> tm2
-  | TmIf (TmBool (false), tm2, tm3) -> tm3
-  | TmIf (tm1, tm2, tm3) -> TmIf (eval1 ctx tm1, tm2, tm3)
-  | TmApp(TmAbs(x,tyT11,t12),v2) when isval ctx v2 ->
-      subst_term_in_term_top v2 t12
-  | TmApp(v1,t2) when isval ctx v1 ->
-      TmApp(v1,eval1 ctx t2)
-  | TmApp(t1,t2) ->
-      TmApp(eval1 ctx t1, t2)
-  | TmLet(x,v1,t2) when isval ctx v1 ->
-      subst_term_in_term_top v1 t2
-  | TmLet(x,t1,t2) ->
-      TmLet(x,eval1 ctx t1, t2)
-  | TmFix(x,tyT1,t1) ->
-      subst_term_in_term_top tm t1
-  | TmPair(v1, v2) when isval ctx tm -> tm
-  | TmPair(v1, t2) when isval ctx v1 ->
-      TmPair(v1, eval1 ctx t2)
-  | TmPair(t1, t2) ->
-      TmPair(eval1 ctx t1, t2)
-  | TmCase(v1, branches) when isval ctx v1 ->
-      let rec inner branch =
-        match branch with
-        | [] -> raise NoRuleApplies
-        | (pattern, num, t)::rest ->
-            try patmatch pattern v1 t
-            with NoMatchPattern -> inner rest
-      in inner branches
-  | TmCase(t1,branches) ->
-      TmCase(eval1 ctx t1, branches)
-  | TmDepApp(TmDepAbs(x,tyT11,t12),t2) ->
-      subst_index_in_term_top t2 t12
-  | TmDepApp(t1,t2) ->
-      TmDepApp(eval1 ctx t1, t2)
-  | TmDepLet(x1,x2,TmDepPair(i1,v1,_),t2) when isval ctx v1 ->
-      subst_term_in_term_top v1 (subst_index_in_term_top i1 t2)
-  | TmDepLet(x1,x2,t1,t2) ->
-      TmDepLet(x1,x2,eval1 ctx t1, t2)
-  | _ -> raise NoRuleApplies
-
-let rec eval ctx tm =
-  try
-    let tm' = eval1 ctx tm in eval ctx tm'
-  with
-  | NoRuleApplies -> tm
-
-(* ------------------------   TYPING  ------------------------ *)
+open Smt
 
 exception NotConsistent
 exception EmptyCase
@@ -140,8 +52,18 @@ let rec get_sr_fm ctx sr id =
       let fpr = get_prop_fm ctx pr' in
       FmAnd([fsr;fpr])
 
+let rec get_sr_fm_r ctx sr =
+  match sr with
+  | SrInt -> FmTrue
+  | SrSubset(x,sr2,pro) ->
+      let fsr = get_sr_fm_r ctx sr2 in
+      let fpr = get_prop_fm ctx pro in
+      FmAnd([fsr;fpr])
+
 let rec sreqv ctx srS srT =
-  ([], FmTrue)
+  let fmS = get_sr_fm_r ctx srS in
+  let fmT = get_sr_fm_r ctx srT in
+  (fmS, FmAnd([FmImply(fmS, fmT);FmImply(fmT,fmS)]))
 
 let rec ideqv ctx idS idT =
   let (l1, f1) = get_id_fm ctx idS in
@@ -169,17 +91,15 @@ let rec tyeqv ctx tyS tyT =
       let l3 = append_uniq l1 l2 in
       (l3, FmAnd(arg))
   | (TyDepExi(x1,sr1,ty1), TyDepExi(x2,sr2,ty2)) ->
-      let (l1, f1) = sreqv ctx sr1 sr2 in
+      let (f3, f1) = sreqv ctx sr1 sr2 in
       let ctx' = add_binding ctx x1 (BdSort(sr1)) in
       let (l2, f2) = tyeqv ctx' ty1 ty2 in
-      let l3 = append_uniq l1 l2 in
-      ([], FmExi(l3, FmImply(f1, f2)))
+      ([], FmUni(l2, FmAnd([f1;FmImply(f3, f2)])))
   | (TyDepUni(x1,sr1,ty1), TyDepUni(x2,sr2,ty2)) ->
-      let (l1, f1) = sreqv ctx sr1 sr2 in
+      let (f3, f1) = sreqv ctx sr1 sr2 in
       let ctx' = add_binding ctx x1 (BdSort(sr1)) in
       let (l2, f2) = tyeqv ctx' ty1 ty2 in
-      let l3 = append_uniq l1 l2 in
-      ([], FmUni(l3, FmImply(f1, f2)))
+      ([], FmUni(l2, FmAnd([f1; FmImply(f3, f2)])))
   | _ -> ([], FmFalse)
 
 let rec concrete_tyeqv ctx tyS tyT =
@@ -215,6 +135,7 @@ let rec typeof ctx t =
     let tyT = get_type_from_context ctx i in (tyT, FmTrue)
   | TmAbs(x,tyT1,t2) ->
       let ctx' = add_binding ctx x (BdType(tyT1)) in
+            printty tyT1;
       let (tyT2, f2) = typeof ctx' t2 in
       let tyT2_new = shift_type (-1) tyT2 in
       let f3 = shift_formula (-1) f2 in
@@ -227,13 +148,8 @@ let rec typeof ctx t =
       | TyArrow(tyT11,tyT12) ->
         let (l3, f3) = tyeqv ctx tyT2 tyT11 in 
         (match f3 with
-        | FmFalse -> error "parameter type mismatch"
-        | _ ->
-          let arg1 = [f1 ; f2 ; f3] in
-          let c1 = FmAnd(arg1) in
-            (match l3 with
-            | [] -> (tyT2, c1)
-            | x -> error "debug:it should be empty!"))
+        | FmFalse -> error "TmApp:parameter type mismatch"
+        | _ -> (tyT2, FmAnd([f1 ; f2 ; f3])))
       | _ -> error "arrow type expected")
   | TmBool(_) -> 
       (TyBool, FmTrue)
@@ -255,8 +171,7 @@ let rec typeof ctx t =
      let ctx' = add_binding ctx x (BdType(tyT1)) in
      let (tyT2,f2) = typeof ctx' t2 in
      let tyT22 = shift_type (-1) tyT2 in
-     let f3 = FmAnd([f1;f2]) in
-     (tyT22, f3)
+     (tyT22, FmAnd([f1;f2]))
   | TmCase(t, cases) ->
       let (tyT, f1) = typeof ctx t in
       (try
@@ -289,9 +204,9 @@ let rec typeof ctx t =
             TyArrow(_,_) ->
               let (l2,f2) = tyeqv ctx tyT tyT1 in
               (match f1 with 
-              | FmFalse -> error "result of body not compatible with domain"
+              | FmFalse -> error "TmFix: result of body not compatible with domain"
               | _ -> (tyT, FmAnd([f1;f2])))
-         | _ -> error "arrow type expected")
+         | _ -> error "TmFix: arrow type expected")
   | TmUnit -> (TyUnit, FmTrue)
   | TmInt(it) -> (TyInt(IdInt(it)), FmTrue)
   | TmPair(t1,t2) ->
@@ -301,37 +216,52 @@ let rec typeof ctx t =
   | TmDepAbs(x,sr1,t2) ->
       let ctx' = add_binding ctx x (BdSort(sr1)) in
       let (tyT2, f2) = typeof ctx' t2 in
-      let tyT2_new = shift_type (-1) tyT2 in
       let f_new = shift_formula (-1) f2 in
-      (TyDepUni(x, sr1, tyT2_new), f_new)
+      (TyDepUni(x, sr1, tyT2), f_new)
   | TmDepApp(t1,id2) ->
       let (tyT1, f1) = typeof ctx t1 in
       (match tyT1 with
           TyDepUni(_, sr11,tyT12) ->
           let f2 = get_sr_fm ctx sr11 id2 in
           (match f2 with
-          | FmFalse -> error "parameter type mismatch"
-          | _ -> (subst_index_in_type_top id2 tyT12, f2))
+          | FmFalse -> error "TmDepApp:parameter type mismatch"
+          | _ -> (subst_index_in_type_top id2 tyT12, FmAnd([f1;f2])))
       | _ -> error "dependent universal type expected")
   | TmDepPair(id,t1,tyT) ->
       (match tyT with
       | TyDepExi(_, sr, tyT1) ->
           let f1 = get_sr_fm ctx sr id in
           let (tyT11, f2) = typeof ctx t1 in
+          pr "par";
+          printty tyT1;
+          printty tyT11;
+          print_newline ();
           let tyT1' = subst_index_in_type_top id tyT1 in
-          let (_, f3) = tyeqv ctx tyT1 tyT1' in
+          printty tyT1';
+          let (_, f3) = tyeqv ctx tyT11 tyT1' in
           (match f3 with
           | FmFalse -> error "type of pair mismatch"
-          | _ -> (tyT, FmAnd([f2;f3])))
+          | _ -> (tyT, FmAnd([f1;f2;f3])))
       | _ -> error "dependent existential type expected") 
   | TmDepLet(x1,x2,t1,t2) ->
      let (tyT1,f1) = typeof ctx t1 in
      (match tyT1 with
       | TyDepExi(_, sr, tyT11) ->
-          let ctx' = add_binding ctx x1 (BdSort(sr)) in
           let tyT11' = shift_type_above 1 1 tyT11 in
+          let ctx' = add_binding ctx x1 (BdSort(sr)) in
           let ctx'' = add_binding ctx' x2 (BdType(tyT11')) in
           let (tyT2,f2) = typeof ctx'' t2 in
           let tyT22 = shift_type (-2) tyT2 in
-          (tyT22, FmAnd([f1;f2]))
+          let f3 = FmUni([1], f2) in
+          (tyT22, FmAnd([f1;f3]))
       | _ -> error "dependent existential type expected")
+
+  let typeof_solved ctx t =
+    let (tyT,fm) = typeof ctx t in
+    printfm fm;print_newline ();
+    let res = fm_solver fm in
+    match res with
+    | 1 -> tyT
+    | 2 -> error "type unsatisfiable"
+    | 3 -> error "type unknown"
+

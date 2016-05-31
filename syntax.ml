@@ -320,7 +320,7 @@ let get_type_from_context ctx i =
 (* ---------------------------------------------------------------------- *)
 (* Printing *)
 
-let obox0() = open_hvbox 0
+(* let obox0() = open_hvbox 0
 let obox() = open_hvbox 2
 let cbox() = close_box()
 let break() = print_break 0 0
@@ -328,7 +328,7 @@ let break() = print_break 0 0
 let small t =
   match t with
     TmVar(_,_) -> true
-  | _ -> false
+  | _ -> false *)
 
 (* let rec printty_Type outer ctx tyT = match tyT with
       tyT -> printty_ArrowType outer ctx tyT
@@ -356,9 +356,11 @@ and printty_AType outer ctx tyT = match tyT with
 
 let printty ctx tyT = printty_Type true ctx tyT *)
 
-let printty_Type outer ctx tyT = pr "T"
+(* let printty_Type outer ctx tyT = pr "T"
 
-let prints_Sort outer ctx srS = pr "S"
+let printsr_Sort outer ctx srS = pr "S"
+
+let printid_Index outer ctx idI = pr "I"
 
 let printty ctx tyT = printty_Type true ctx tyT
 
@@ -397,6 +399,39 @@ let rec printtm_Term outer ctx t = match t with
        pr ".";
        printtm_Term false ctx t1;
        cbox()
+  | TmPair(t1,t2) ->
+      obox();
+      pr " (";
+      printtm_Term false ctx t1;
+      pr ",";
+      printtm_Term false ctx t2;
+      pr ") ";
+      cbox();
+  | TmDepAbs(x,sr,t1) ->
+      (let (ctx',x') = (pick_freshname ctx x) in
+         obox(); pr "lambda ";
+         pr x'; pr ":"; printsr_Sort false ctx sr; pr ".";
+         if (small t1) && not outer then break() else print_space();
+         printtm_Term outer ctx' t1;
+         cbox())
+  | TmDepPair(id,t1,tyT) ->
+      obox();
+      pr " <";
+      printid_Index false ctx id;
+      pr ",";
+      printtm_Term false ctx t1;
+      pr ">:";
+      printty_Type false ctx tyT;
+      cbox();
+  | TmDepLet(x1,x2,t1,t2) ->
+      obox0();
+      pr "let <"; pr x1; pr ","; pr x2; pr "> = ";
+      printtm_Term false ctx t1;
+      print_space(); pr "in"; print_space();
+      let ctx' = add_name ctx x1 in
+      let ctx'' = add_name ctx x2 in
+      printtm_Term false ctx'' t2;
+      cbox()
   | t -> printtm_AppTerm outer ctx t
 
 and printtm_AppTerm outer ctx t = match t with
@@ -405,6 +440,12 @@ and printtm_AppTerm outer ctx t = match t with
       printtm_AppTerm false ctx t1;
       print_space();
       printtm_ATerm false ctx t2;
+      cbox()
+  | TmDepApp(t1, id) ->
+      obox0();
+      printtm_AppTerm false ctx t1;
+      print_space();
+      printid_Index false ctx id;
       cbox()
   | t -> printtm_ATerm outer ctx t
 
@@ -423,48 +464,148 @@ and printtm_ATerm outer ctx t = match t with
   | TmUnit -> pr "unit"
   | t -> pr "("; printtm_Term outer ctx t; pr ")"
 
-let printtm ctx t = printtm_Term true ctx t
+let printtm ctx t = printtm_Term true ctx t *)
 
-let rec print_formula fm =
+let rec printid id = 
+  match id with
+  | IdVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
+  | IdInt(i) -> pr " ";print_int i;pr " "
+  | IdAdd(id1,id2) -> pr " ";printid id1;pr "+";printid id2;pr " "
+
+let rec printpr pro = 
+  match pro with
+  | PrTrue -> pr " true "
+  | PrFalse -> pr " false "
+  | PrNeg(pro1) -> pr " (! ";printpr pro1;pr ") "
+  | PrAnd(pro1, pro2) -> pr " (";printpr pro1;pr " & ";printpr pro2; pr ") "
+  | PrOr(pro1, pro2) -> pr " (";printpr pro1;pr " || ";printpr pro2; pr ") "
+  | PrLe(id1, id2) -> pr " (";printid id1;pr " <= ";printid id2; pr ") "
+
+let rec printsr sr =
+  match sr with
+  | SrInt -> pr "int"
+  | SrSubset(x,sr1,pro) -> pr " {";pr x;pr ":";printsr sr1;pr "|";printpr pro;pr "} "
+
+let rec printty ty =
+  match ty with
+  | TyInt(id) -> pr " int(";printid id;pr ") "
+  | TyBool -> pr " bool "
+  | TyUnit -> pr " unit "
+  | TyProduct(ty1,ty2) -> pr " (";printty ty1;pr " * ";printty ty2;pr ") "
+  | TyArrow(ty1,ty2) -> pr " (";printty ty1;pr " -> ";printty ty2;pr ") "
+  | TyDepUni(x,sr,ty1) -> pr " (Pi ";pr x;pr ":";printsr sr;pr ".";printty ty1;pr ") "
+  | TyDepExi(x,sr,ty1) -> pr " (Sigma ";pr x;pr ":";printsr sr;pr ".";printty ty1;pr ") "
+
+let rec printtm t =
+  match t with
+  | TmVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
+  | TmInt(i) -> pr " ";print_int i;pr " "
+  | TmBool(b) -> pr " ";print_bool b;pr " "
+  | TmUnit -> pr " () "
+  | TmPair(t1,t2) -> pr " (";printtm t1;pr ",";printtm t2;pr ") "
+  | TmIf(t1,t2,t3) -> pr " if ";printtm t1;pr " then ";printtm t2;pr " else ";printtm t3;pr " "
+  | TmCase(_,_) -> ()
+  | TmAbs(x,ty,t1) -> pr " fn ";pr x;pr ":";printty ty;pr ".";printtm t1;pr " "
+  | TmApp(t1,t2) -> pr " ";printtm t1;pr " ";printtm t2;pr " "
+  | TmLet(x,t1,t2) -> pr " let ";pr x;pr " = ";printtm t1;pr " in ";printtm t2;pr " "
+  | TmFix(x,ty,t1) -> pr " fix ";pr x;pr ":";printty ty;pr " ";printtm t1;pr " "
+  | TmDepAbs(x,sr,t1) -> pr " lambda ";pr x;pr ":";printsr sr;pr ".";printtm t1;pr " "
+  | TmDepApp(t1,id) -> pr " ";printtm t1;pr " ";printid id;pr " "
+  | TmDepPair(id,t1,ty) -> pr " <";printid id;pr ",";printtm t1;pr ":";printty ty;pr "> "
+  | TmDepLet(x1,x2,t1,t2) -> pr " let <";pr x1;pr ",";pr x2;pr "> = ";printtm t1;pr " in ";printtm t2;pr " "
+
+let rec printfm fm =
   match fm with
   | FmVar(i) -> pr "[";pr (string_of_int i);pr "]"
   | FmIntConst(i) -> pr (string_of_int i)
-  | FmAdd(fm1,fm2) -> pr "(";print_formula fm1;pr " + ";print_formula fm2;pr ")"
+  | FmAdd(fm1,fm2) -> pr "(";printfm fm1;pr " + ";printfm fm2;pr ")"
   | FmTrue -> pr "true"
   | FmFalse -> pr "false"
   | FmAnd(fms) -> 
       pr "(";
       let fst = List.hd fms in
       let last = List.tl fms in
-      print_formula fst;
+      printfm fst;
       (match last with
       | [] -> error "formula AND should have at least two sub formulas"
-      | _ -> List.iter (fun x -> pr " and ";print_formula x) last;pr")")
+      | _ -> List.iter (fun x -> pr " and ";printfm x) last;pr")")
   | FmOr(fms) ->
       pr "(";
       let fst = List.hd fms in
       let last = List.tl fms in
-      print_formula fst;
+      printfm fst;
       (match last with
       | [] -> error "formula OR should have at least two sub formulas"
-      | _ -> List.iter (fun x -> pr " or ";print_formula x) last)
+      | _ -> List.iter (fun x -> pr " or ";printfm x) last)
   | FmNot(fm1) ->
-      pr "(not ";print_formula fm1;pr ")"
+      pr "(not ";printfm fm1;pr ")"
   | FmLe(fm1,fm2) ->
-      pr "(";print_formula fm1;pr " < ";print_formula fm2;pr ")"
+      pr "(";printfm fm1;pr " <= ";printfm fm2;pr ")"
   | FmUni(l,fm1) ->
       pr "( for any ";
-      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]");
+      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]") l;
       pr ".";
-      print_formula fm1;
+      printfm fm1;
       pr ")"
   | FmExi(l,fm1) ->
       pr "( there exits ";
-      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]");
+      List.iter (fun x -> pr "[";pr (string_of_int x);pr "]") l;
       pr ".";
-      print_formula fm1;
+      printfm fm1;
       pr ")"
   | FmEq(fm1,fm2) ->
-      pr "(";print_formula fm1;pr " = ";print_formula fm2;pr ")"
+      pr "(";printfm fm1;pr " = ";printfm fm2;pr ")"
   | FmImply(fm1,fm2) ->
-      pr "(";print_formula fm1;pr " => ";print_formula fm2;pr ")"
+      pr "(";printfm fm1;pr " => ";printfm fm2;pr ")"
+
+(*-------------------------debugging--------------------------------*)
+
+
+
+let rec print_raw_index id = 
+  match id with
+  | IdVar(x,n) -> pr "IdVar(";print_int x;pr ",";print_int n;pr ")"
+  | IdInt(i) -> pr "IdInt(";print_int i;pr ")"
+  | IdAdd(id1,id2) -> pr "IdAdd(";print_raw_index id1;pr ",";print_raw_index id2;pr ")"
+
+let rec print_raw_prop pro = 
+  match pro with
+  | PrTrue -> pr "PrTrue"
+  | PrFalse -> pr "PrFalse"
+  | PrNeg(pro1) -> pr "PrNeg(";print_raw_prop pro1;pr ")"
+  | PrAnd(pro1, pro2) -> pr "PrAnd(";print_raw_prop pro1;pr ",";print_raw_prop pro2; pr ")"
+  | PrOr(pro1, pro2) -> pr "PrOr(";print_raw_prop pro1;pr ",";print_raw_prop pro2; pr ")"
+  | PrLe(id1, id2) -> pr "PrLe(";print_raw_index id1;pr ",";print_raw_index id2; pr ")"
+
+let rec print_raw_sort sr =
+  match sr with
+  | SrInt -> pr "SrInt"
+  | SrSubset(x,sr1,pro) -> pr "SrSubset(";pr x;pr ",";print_raw_sort sr1;pr ",";print_raw_prop pro;pr ")"
+
+let rec print_raw_type ty =
+  match ty with
+  | TyInt(id) -> pr "TyInt(";print_raw_index id;pr ")"
+  | TyBool -> pr "TyBool"
+  | TyUnit -> pr "TyUnit"
+  | TyProduct(ty1,ty2) -> pr "TyProduct(";print_raw_type ty1;pr ",";print_raw_type ty2;pr ")"
+  | TyArrow(ty1,ty2) -> pr "TyArrow(";print_raw_type ty1;pr ",";print_raw_type ty2;pr ")"
+  | TyDepUni(x,sr,ty1) -> pr "TyDepUni(";pr x;pr ",";print_raw_sort sr;pr ",";print_raw_type ty1;pr ")"
+  | TyDepExi(x,sr,ty1) -> pr "TyDepExi(";pr x;pr ",";print_raw_sort sr;pr ",";print_raw_type ty1;pr ")"
+
+let rec print_raw t =
+  match t with
+  | TmVar(x,n) -> pr "TmVar(";print_int x;pr ",";print_int n;pr ")"
+  | TmInt(i) -> pr "TmInt(";print_int i; pr ")"
+  | TmBool(b) -> pr "TmBool("; print_bool b; pr ")"
+  | TmUnit -> pr "TmUnit"
+  | TmPair(t1,t2) -> pr "(";print_raw t1;pr ",";print_raw t2;pr ")"
+  | TmIf(t1,t2,t3) -> pr "TmIf(";print_raw t1;pr ",";print_raw t2;pr ",";print_raw t3;pr ")"
+  | TmCase(_,_) -> ()
+  | TmAbs(x,ty,t1) -> pr "TmAbs(";pr x;pr ",";print_raw_type ty;pr ",";print_raw t1;pr ")"
+  | TmApp(t1,t2) -> pr "TmApp(";print_raw t1;pr ",";print_raw t2;pr ")"
+  | TmLet(x,t1,t2) -> pr "TmLet(";pr x;pr ",";print_raw t1;pr ",";print_raw t2;pr ")"
+  | TmFix(x,ty,t1) -> pr "TmFix(";pr x;pr ",";print_raw_type ty;pr ",";print_raw t1;pr ")"
+  | TmDepAbs(x,sr,t1) -> pr "TmDepAbs(";pr x;pr ",";print_raw_sort sr;pr ",";print_raw t1;pr ")"
+  | TmDepApp(t1,id) -> pr "TmDepApp(";print_raw t1;pr ",";print_raw_index id;pr ")"
+  | TmDepPair(id,t1,ty) -> pr "TmDepPair(";print_raw_index id;pr ",";print_raw t1;pr ",";print_raw_type ty;pr ")"
+  | TmDepLet(x1,x2,t1,t2) -> pr "TmDepLet(";pr x1;pr ",";pr x2;pr ",";print_raw t1;pr ",";print_raw t2;pr ")"
