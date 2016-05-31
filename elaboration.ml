@@ -347,3 +347,11 @@ let rec ela_coerce ctx ty1 ty2 =
      ElaFmExists
        (s, ssr2, ElaFmConj (ElaFmProp (ela_subst_index_in_index_top id pr2), fm)))
   | _ -> ElaFmBot
+
+let rec
+
+  ela_synthesize ctx ex = raise TODO
+
+and
+
+  ela_check ctx ex ty free = raise TODO
