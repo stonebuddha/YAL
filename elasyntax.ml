@@ -194,7 +194,7 @@ let ela_exmap onvar onsort ontype c ex =
     | ElaExUnit -> ex
     | ElaExFloat (f) -> ex
     | ElaExPair (ex1, ex2) -> ElaExPair (walk c ex1, walk c ex2)
-    | ElaExIf (ex1, ex2, ex3) -> ElaExIf (ex1, ex2, ex3)
+    | ElaExIf (ex1, ex2, ex3) -> ElaExIf (walk c ex1, walk c ex2, walk c ex3)
     | ElaExLet (x, ex1, ex2) -> ElaExLet (x, walk c ex1, walk (c + 1) ex2)
     | ElaExApp (ex1, ex2) -> ElaExApp (walk c ex1, walk c ex2)
     | ElaExAbs (x, ex1) -> ElaExAbs (x, walk (c + 1) ex1)
@@ -404,75 +404,6 @@ let ela_get_binding ctx i =
   let (_, bind) = List.nth ctx i in
   ela_shift_binding (i + 1) bind
 
-let ela_gentmp_cnt = ref 0
-
-let ela_gentmp () =
-  let s = "%tmp" ^ (string_of_int (!ela_gentmp_cnt)) in
-  incr ela_gentmp_cnt;
-  s
-
-let rec ela_convert_expr ctx ex =
-  match ex with
-  | ElaExVar (x, n) -> ex
-  | ElaExInt (i) -> ex
-  | ElaExBool (b) -> ex
-  | ElaExUnit -> ex
-  | ElaExFloat (f) -> ex
-  | ElaExPair (ex1, ex2) ->
-    let x1 = ela_gentmp () in
-    let x2 = ela_gentmp () in
-    ElaExLet
-      (x1,
-       ela_convert_expr ctx ex1,
-       ElaExLet
-         (x2,
-          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
-          ElaExPair
-            (ElaExVar (1, 2 + ela_ctx_length ctx),
-             ElaExVar (0, 2 + ela_ctx_length ctx))))
-  | ElaExIf (ex1, ex2, ex3) ->
-    let x1 = ela_gentmp () in
-    ElaExLet
-      (x1,
-       ela_convert_expr ctx ex1,
-       ElaExIf
-         (ElaExVar (0, 1 + ela_ctx_length ctx),
-          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
-          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex3)))
-  | ElaExLet (x, ex1, ex2) ->
-    ElaExLet
-      (x,
-       ela_convert_expr ctx ex1,
-       ela_convert_expr (ela_add_name ctx x) ex2)
-  | ElaExApp (ex1, ex2) ->
-    let x1 = ela_gentmp () in
-    let x2 = ela_gentmp () in
-    ElaExLet
-      (x1,
-       ela_convert_expr ctx ex1,
-       ElaExLet
-         (x2,
-          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
-          ElaExApp
-            (ElaExVar (1, 2 + ela_ctx_length ctx),
-             ElaExVar (0, 2 + ela_ctx_length ctx))))
-  | ElaExAbs (x, ex1) ->
-    let x1 = ela_gentmp () in
-    ElaExAbs
-      (x,
-       ElaExLet
-         (x1,
-          ElaExVar (0, 1 + ela_ctx_length ctx),
-          ela_convert_expr
-            (ela_add_name (ela_add_name ctx x) x1)
-            (ela_shift_expr_above 1 1 ex1)))
-  | ElaExFix (f, tyf, ex1) ->
-    ElaExFix (f, tyf, ela_convert_expr (ela_add_name ctx f) ex1)
-  | ElaExDepAbs (a, sr1, ex1) ->
-    ElaExDepAbs (a, sr1, ela_convert_expr (ela_add_name ctx a) ex1)
-  | ElaExAs (ex1, ty1) ->
-    ElaExAs (ela_convert_expr ctx ex1, ty1)
-
 let rec ela_find_id free s =
   match free with
   | (s', sr) :: rest -> if s = s' then sr else ela_find_id rest s
@@ -631,15 +562,15 @@ let rec ela_string_of_type ctx ty =
   | ElaTyUnit -> "unit"
   | ElaTyFloat -> "float"
   | ElaTyVector (id1) -> "vec(" ^ (ela_string_of_index ctx id1) ^ ")"
-  | ElaTyMatrix (id1, id2) -> "mat(" ^ (ela_string_of_index ctx id1) ^ "," ^ (ela_string_of_index ctx id2) ^ ")"
-  | ElaTyProduct (ty1, ty2) -> "(" ^ (ela_string_of_type ctx ty1) ^ "*" ^ (ela_string_of_type ctx ty2) ^ ")"
+  | ElaTyMatrix (id1, id2) -> "mat(" ^ (ela_string_of_index ctx id1) ^ ", " ^ (ela_string_of_index ctx id2) ^ ")"
+  | ElaTyProduct (ty1, ty2) -> "(" ^ (ela_string_of_type ctx ty1) ^ " * " ^ (ela_string_of_type ctx ty2) ^ ")"
   | ElaTyArrow (ty1, ty2) -> "(" ^ (ela_string_of_type ctx ty1) ^ " -> " ^ (ela_string_of_type ctx ty2) ^ ")"
   | ElaTyDepUni (a, sr1, ty1) ->
     let (ctx', a') = ela_pick_fresh_name ctx a in
-    "(pi " ^ a' ^ ":"  ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_type ctx' ty1) ^ ")"
+    "(pi " ^ a' ^ ": "  ^ (ela_string_of_sort ctx sr1) ^ ". " ^ (ela_string_of_type ctx' ty1) ^ ")"
   | ElaTyDepExi (a, sr1, ty1) ->
     let (ctx', a') = ela_pick_fresh_name ctx a in
-    "(sig " ^ a' ^ ":" ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_type ctx' ty1) ^ ")"
+    "(sig " ^ a' ^ ": " ^ (ela_string_of_sort ctx sr1) ^ ". " ^ (ela_string_of_type ctx' ty1) ^ ")"
 
 let rec ela_string_of_expr ctx ex =
   match ex with
@@ -648,14 +579,14 @@ let rec ela_string_of_expr ctx ex =
   | ElaExBool (b) -> if b then "true" else "false"
   | ElaExUnit -> "()"
   | ElaExFloat (f) -> string_of_float f
-  | ElaExPair (ex1, ex2) -> "(" ^ (ela_string_of_expr ctx ex1) ^ "," ^ (ela_string_of_expr ctx ex2) ^ ")"
+  | ElaExPair (ex1, ex2) -> "(" ^ (ela_string_of_expr ctx ex1) ^ ", " ^ (ela_string_of_expr ctx ex2) ^ ")"
   | ElaExIf (ex1, ex2, ex3) -> "(if " ^ (ela_string_of_expr ctx ex1) ^ " then " ^ (ela_string_of_expr ctx ex2) ^ " else " ^ (ela_string_of_expr ctx ex3) ^ ")"
   | ElaExLet (x, ex1, ex2) -> "(let " ^ x ^ " = " ^ (ela_string_of_expr ctx ex1) ^ " in " ^ (ela_string_of_expr (ela_add_name ctx x) ex2) ^ ")"
-  | ElaExApp (ex1, ex2) -> "(" ^ (ela_string_of_expr ctx ex1) ^ " " ^ (ela_string_of_expr ctx ex2) ^ ")"
+  | ElaExApp (ex1, ex2) -> "[" ^ (ela_string_of_expr ctx ex1) ^ " " ^ (ela_string_of_expr ctx ex2) ^ "]"
   | ElaExAbs (x, ex1) ->
     let (ctx', x') = ela_pick_fresh_name ctx x in
-    "(lam " ^ x' ^ "." ^ (ela_string_of_expr ctx' ex1) ^ ")"
-  | ElaExFix (f, tyf, ex1) -> "(fix " ^ f ^ ":" ^ (ela_string_of_type ctx tyf) ^ "." ^ (ela_string_of_expr (ela_add_name ctx f) ex1) ^ ")"
+    "(lam " ^ x' ^ ". " ^ (ela_string_of_expr ctx' ex1) ^ ")"
+  | ElaExFix (f, tyf, ex1) -> "(fix " ^ f ^ ": " ^ (ela_string_of_type ctx tyf) ^ ". " ^ (ela_string_of_expr (ela_add_name ctx f) ex1) ^ ")"
   | ElaExDepAbs (a, sr1, ex1) ->
     let (ctx', a') = ela_pick_fresh_name ctx a in
     "(dep " ^ a' ^ ":" ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_expr ctx' ex1) ^ ")"
@@ -670,3 +601,72 @@ let ela_string_of_command ctx cmd =
   | ElaCmdVar (x, ty1) -> "declare " ^ x ^ " : " ^ (ela_string_of_type ctx ty1) ^ ";"
   | ElaCmdSortAbb (a, sr1) -> "sort " ^ a ^ " = " ^ (ela_string_of_sort ctx sr1) ^ ";"
   | ElaCmdTypeAbb (a, ty1) -> "type " ^ a ^ " = " ^ (ela_string_of_type ctx ty1) ^ ";"
+
+let ela_gentmp_cnt = ref 0
+
+let ela_gentmp () =
+  let s = "%tmp" ^ (string_of_int (!ela_gentmp_cnt)) in
+  incr ela_gentmp_cnt;
+  s
+
+let rec ela_convert_expr ctx ex =
+  match ex with
+  | ElaExVar (x, n) -> ex
+  | ElaExInt (i) -> ex
+  | ElaExBool (b) -> ex
+  | ElaExUnit -> ex
+  | ElaExFloat (f) -> ex
+  | ElaExPair (ex1, ex2) ->
+    let x1 = ela_gentmp () in
+    let x2 = ela_gentmp () in
+    ElaExLet
+      (x1,
+       ela_convert_expr ctx ex1,
+       ElaExLet
+         (x2,
+          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
+          ElaExPair
+            (ElaExVar (1, 2 + ela_ctx_length ctx),
+             ElaExVar (0, 2 + ela_ctx_length ctx))))
+  | ElaExIf (ex1, ex2, ex3) ->
+    let x1 = ela_gentmp () in
+    ElaExLet
+      (x1,
+       ela_convert_expr ctx ex1,
+       ElaExIf
+         (ElaExVar (0, 1 + ela_ctx_length ctx),
+          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
+          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex3)))
+  | ElaExLet (x, ex1, ex2) ->
+    ElaExLet
+      (x,
+       ela_convert_expr ctx ex1,
+       ela_convert_expr (ela_add_name ctx x) ex2)
+  | ElaExApp (ex1, ex2) ->
+    let x1 = ela_gentmp () in
+    let x2 = ela_gentmp () in
+    ElaExLet
+      (x1,
+       ela_convert_expr ctx ex1,
+       ElaExLet
+         (x2,
+          ela_convert_expr (ela_add_name ctx x1) (ela_shift_expr 1 ex2),
+          ElaExApp
+            (ElaExVar (1, 2 + ela_ctx_length ctx),
+             ElaExVar (0, 2 + ela_ctx_length ctx))))
+  | ElaExAbs (x, ex1) ->
+    let x1 = ela_gentmp () in
+    ElaExAbs
+      (x,
+       ElaExLet
+         (x1,
+          ElaExVar (0, 1 + ela_ctx_length ctx),
+          ela_convert_expr
+            (ela_add_name (ela_add_name ctx x) x1)
+            (ela_shift_expr_above 1 1 ex1)))
+  | ElaExFix (f, tyf, ex1) ->
+    ElaExFix (f, tyf, ela_convert_expr (ela_add_name ctx f) ex1)
+  | ElaExDepAbs (a, sr1, ex1) ->
+    ElaExDepAbs (a, sr1, ela_convert_expr (ela_add_name ctx a) ex1)
+  | ElaExAs (ex1, ty1) ->
+    ElaExAs (ela_convert_expr ctx ex1, ty1)

@@ -159,7 +159,7 @@ let rec
   | ElaExVar (x, n) ->
     (match ela_get_binding ctx x with
      | ElaBdVar (tyx) -> (tyx, [], ElaFmTop)
-     | _ -> raise (Error "ela_synthesize"))
+     | _ -> raise (Error "ela_synthesize: var"))
   | ElaExInt (i) -> (ElaTyInt (ElaIdInt i), [], ElaFmTop)
   | ElaExBool (b) -> (ElaTyBool (ElaIdBool b), [], ElaFmTop)
   | ElaExUnit -> (ElaTyUnit, [], ElaFmTop)
@@ -168,7 +168,7 @@ let rec
     let (ty1, free1, fm1) = ela_synthesize ctx ex1 in
     let (ty2, free2, fm2) = ela_synthesize ctx ex2 in
     (ElaTyProduct (ty1, ty2), List.append free2 free1, ElaFmConj (fm1, fm2))
-  | ElaExIf (ex1, ex2, ex3) -> raise (Error "ela_synthesize")
+  | ElaExIf (ex1, ex2, ex3) -> raise (Error "ela_synthesize: if")
   | ElaExLet (x, ex1, ex2) ->
     let (ty1, free1, fm1) = ela_synthesize ctx ex1 in
     let rec inner ty1 ctx cnt =
@@ -229,13 +229,13 @@ let rec
        let fm2 = ela_check ctx ex2 ty11 free1' in
        (ty12, free1', ElaFmConj (fm1, fm2))
      | _ -> raise (Error "ela_synthesize"))
-  | ElaExAbs (x, ex1) -> raise (Error "ela_synthesize")
+  | ElaExAbs (x, ex1) -> raise (Error "ela_synthesize: abs")
   | ElaExFix (f, tyf, ex1) ->
     let fm1 =
       ela_check
         (ela_add_binding ctx f (ElaBdVar tyf)) ex1 (ela_shift_type 1 tyf) [] in
     (tyf, [], fm1)
-  | ElaExDepAbs (a, sr1, ex1) -> raise (Error "ela_synthesize")
+  | ElaExDepAbs (a, sr1, ex1) -> raise (Error "ela_synthesize: dep_abs")
   | ElaExAs (ex1, ty1) ->
     let fm1 = ela_check ctx ex1 ty1 [] in
     (ty1, [], fm1)
