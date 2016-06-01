@@ -451,9 +451,23 @@ let ela_parse_file fn =
   let e = Elaparser.prog Elalexer.read lexbuf in
   e ela_prelude_ctx
 
-let ela_check_formula ctx fm = ()
+let _ = Z3.Log.open_ "z3.log"
+let ela_z3cfg = ["timeout", "10000"]
+let ela_z3ctx = Z3.mk_context ela_z3cfg
+let ela_z3solver = Z3.Solver.mk_solver ela_z3ctx None
+
+let ela_check_formula ctx fm =
+  let res = ela_transform_formula ctx fm ela_z3ctx [] in
+  print_string (Z3.Expr.to_string res); print_newline ();
+  let _ = Z3.Solver.reset ela_z3solver in
+  let _ = Z3.Solver.add ela_z3solver [res] in
+  let q = Z3.Solver.check ela_z3solver [] in
+  print_string "Z3 Solver says: ";
+  print_string (Z3.Solver.string_of_status q);
+  print_newline ()
 
 let ela_process_cmd ctx cmd =
+  print_string (ela_string_of_command ctx cmd); print_newline ();
   match cmd with
   | ElaCmdEval (ex1) ->
     let ex1' = ela_convert_expr ctx ex1 in
@@ -481,6 +495,7 @@ let ela_process_cmd ctx cmd =
                 s
                 (ela_shift_type 1 acc)))
         subst ty in
+    print_string (ela_string_of_type ctx ty'); print_newline ();
     ela_check_formula ctx fm'';
     ctx
   | ElaCmdVal (x, ex1) ->
@@ -509,6 +524,7 @@ let ela_process_cmd ctx cmd =
                 s
                 (ela_shift_type 1 acc)))
         subst ty in
+    print_string (ela_string_of_type ctx ty'); print_newline ();
     ela_check_formula ctx fm'';
     ela_add_binding ctx x (ElaBdVar ty')
   | ElaCmdVar (x, ty1) -> ela_add_binding ctx x (ElaBdVar ty1)
@@ -516,6 +532,8 @@ let ela_process_cmd ctx cmd =
   | ElaCmdTypeAbb (a, ty1) -> ela_add_binding ctx a (ElaBdTypeAbb ty1)
 
 let main () =
-  print_string "Hello!\n"
+  let (cmds, _) = ela_parse_file "elab.f" in
+  let _ = List.fold_left ela_process_cmd ela_prelude_ctx cmds in
+  ()
 
 let () = main ()

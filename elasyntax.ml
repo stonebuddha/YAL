@@ -478,6 +478,195 @@ let rec ela_find_id free s =
   | (s', sr) :: rest -> if s = s' then sr else ela_find_id rest s
   | [] -> raise (Error "ela_find_id")
 
-let rec ela_transform_index ctx id z3ctx free = raise TODO
+let rec ela_transform_index ctx id z3ctx free =
+  match id with
+  | ElaIdId (s) ->
+    let sr = ela_find_id free s in
+    (match sr with
+     | ElaSrInt ->
+       Z3.Arithmetic.Integer.mk_const z3ctx (Z3.Symbol.mk_string z3ctx s)
+     | ElaSrBool ->
+       Z3.Boolean.mk_const z3ctx (Z3.Symbol.mk_string z3ctx s)
+     | _ -> raise (Error "ela_transform_index"))
+  | ElaIdVar (a, n) ->
+    (match ela_get_binding ctx a with
+     | ElaBdIndex (sr) ->
+       (match sr with
+        | ElaSrInt ->
+          Z3.Arithmetic.Integer.mk_const
+            z3ctx (Z3.Symbol.mk_string z3ctx (ela_index_to_name ctx a))
+        | ElaSrBool ->
+          Z3.Boolean.mk_const
+            z3ctx (Z3.Symbol.mk_string z3ctx (ela_index_to_name ctx a))
+        | _ -> raise (Error "ela_transform_index"))
+     | _ -> raise (Error "ela_transform_index"))
+  | ElaIdInt (i) -> Z3.Arithmetic.Integer.mk_numeral_i z3ctx i
+  | ElaIdBool (b) ->
+    if b then Z3.Boolean.mk_true z3ctx else Z3.Boolean.mk_false z3ctx
+  | ElaIdBinop (bop, id1, id2) ->
+    let res1 = ela_transform_index ctx id1 z3ctx free in
+    let res2 = ela_transform_index ctx id2 z3ctx free in
+    (match bop with
+     | ElaBnPlus -> Z3.Arithmetic.mk_add z3ctx [res1; res2]
+     | ElaBnMinus -> Z3.Arithmetic.mk_sub z3ctx [res1; res2]
+     | ElaBnTimes -> Z3.Arithmetic.mk_mul z3ctx [res1; res2]
+     | ElaBnDiv -> Z3.Arithmetic.mk_div z3ctx res1 res2
+     | ElaBnLeq -> Z3.Arithmetic.mk_le z3ctx res1 res2
+     | ElaBnLt -> Z3.Arithmetic.mk_lt z3ctx res1 res2
+     | ElaBnGeq -> Z3.Arithmetic.mk_ge z3ctx res1 res2
+     | ElaBnGt -> Z3.Arithmetic.mk_gt z3ctx res1 res2
+     | ElaBnNeq -> Z3.Boolean.mk_not z3ctx (Z3.Boolean.mk_eq z3ctx res1 res2)
+     | ElaBnEq -> Z3.Boolean.mk_eq z3ctx res1 res2
+     | ElaBnAnd -> Z3.Boolean.mk_and z3ctx [res1; res2]
+     | ElaBnOr -> Z3.Boolean.mk_or z3ctx [res1; res2])
+  | ElaIdUnop (uop, id1) ->
+    let res1 = ela_transform_index ctx id1 z3ctx free in
+    (match uop with
+     | ElaUnNot -> Z3.Boolean.mk_not z3ctx res1)
 
-let rec ela_transform_formula ctx fm z3ctx free = raise TODO
+let rec ela_transform_formula ctx fm z3ctx free =
+  match fm with
+  | ElaFmTop -> Z3.Boolean.mk_true z3ctx
+  | ElaFmBot -> Z3.Boolean.mk_false z3ctx
+  | ElaFmProp (pr1) -> ela_transform_index ctx pr1 z3ctx free
+  | ElaFmConj (fm1, fm2) ->
+    let res1 = ela_transform_formula ctx fm1 z3ctx free in
+    let res2 = ela_transform_formula ctx fm2 z3ctx free in
+    Z3.Boolean.mk_and z3ctx [res1; res2]
+  | ElaFmImply (pr1, fm2) ->
+    let res1 = ela_transform_index ctx pr1 z3ctx free in
+    let res2 = ela_transform_formula ctx fm2 z3ctx free in
+    Z3.Boolean.mk_implies z3ctx res1 res2
+  | ElaFmEqv (id1, id2) ->
+    let res1 = ela_transform_index ctx id1 z3ctx free in
+    let res2 = ela_transform_index ctx id2 z3ctx free in
+    Z3.Boolean.mk_eq z3ctx res1 res2
+  | ElaFmForall (a, sr1, fm1) ->
+    let (_, a') = ela_pick_fresh_name ctx a in
+    let ctx' = ela_add_binding ctx a' (ElaBdIndex sr1) in
+    let res1 =
+      ela_transform_formula
+        ctx' fm1 z3ctx
+        (List.map (fun (s, sr) -> (s, ela_shift_sort 1 sr)) free) in
+    (match sr1 with
+     | ElaSrInt ->
+       Z3.Quantifier.expr_of_quantifier
+         (Z3.Quantifier.mk_forall_const
+            z3ctx
+            [Z3.Arithmetic.Integer.mk_const
+               z3ctx (Z3.Symbol.mk_string z3ctx a')]
+            res1 None [] [] None None)
+     | ElaSrBool ->
+       Z3.Quantifier.expr_of_quantifier
+         (Z3.Quantifier.mk_forall_const
+            z3ctx
+            [Z3.Boolean.mk_const z3ctx (Z3.Symbol.mk_string z3ctx a')]
+            res1 None [] [] None None)
+     | _ -> raise (Error "ela_transform_formula"))
+  | ElaFmExists (s, sr1, fm1) ->
+    let res1 = ela_transform_formula ctx fm1 z3ctx ((s, sr1) :: free) in
+    (match sr1 with
+     | ElaSrInt ->
+       Z3.Quantifier.expr_of_quantifier
+         (Z3.Quantifier.mk_exists_const
+            z3ctx
+            [Z3.Arithmetic.Integer.mk_const
+               z3ctx (Z3.Symbol.mk_string z3ctx s)]
+            res1 None [] [] None None)
+     | ElaSrBool ->
+       Z3.Quantifier.expr_of_quantifier
+         (Z3.Quantifier.mk_exists_const
+            z3ctx
+            [Z3.Boolean.mk_const
+               z3ctx (Z3.Symbol.mk_string z3ctx s)]
+            res1 None [] [] None None)
+     | _ -> raise (Error "ela_transform_formula"))
+  | ElaFmScope (fm1) ->
+    ela_transform_formula
+      (ela_add_name ctx "%scope")
+      fm1
+      z3ctx
+      (List.map (fun (s, sr) -> (s, ela_shift_sort 1 sr)) free)
+
+let ela_string_of_binop bop =
+  match bop with
+  | ElaBnPlus -> "+"
+  | ElaBnMinus -> "-"
+  | ElaBnTimes -> "*"
+  | ElaBnDiv -> "/"
+  | ElaBnLeq -> "<="
+  | ElaBnLt -> "<"
+  | ElaBnGeq -> ">="
+  | ElaBnGt -> ">"
+  | ElaBnNeq -> "!="
+  | ElaBnEq -> "="
+  | ElaBnAnd -> "&&"
+  | ElaBnOr -> "||"
+
+let ela_string_of_unop uop =
+  match uop with
+  | ElaUnNot -> "~"
+
+let rec ela_string_of_index ctx id =
+  match id with
+  | ElaIdId (s) -> s
+  | ElaIdVar (a, n) -> ela_index_to_name ctx a
+  | ElaIdInt (i) -> string_of_int i
+  | ElaIdBool (b) -> if b then "true" else "false"
+  | ElaIdBinop (bop, id1, id2) -> "(" ^ (ela_string_of_index ctx id1) ^ " " ^ (ela_string_of_binop bop) ^ " " ^ (ela_string_of_index ctx id2) ^ ")"
+  | ElaIdUnop (uop, id1) -> "(" ^ (ela_string_of_unop uop) ^ " " ^ (ela_string_of_index ctx id1) ^ ")"
+
+let rec ela_string_of_sort ctx sr =
+  match sr with
+  | ElaSrVar (a, n) -> ela_index_to_name ctx a
+  | ElaSrInt -> "int"
+  | ElaSrBool -> "bool"
+  | ElaSrSubset (a, sr1, pr1) -> "{ " ^ a ^ " : " ^ (ela_string_of_sort ctx sr1) ^ " | " ^ (ela_string_of_index (ela_add_name ctx a) pr1) ^ " }"
+
+let rec ela_string_of_type ctx ty =
+  match ty with
+  | ElaTyVar (a, n) -> ela_index_to_name ctx a
+  | ElaTyInt (id1) -> "int(" ^ (ela_string_of_index ctx id1) ^ ")"
+  | ElaTyBool (id1) -> "bool(" ^ (ela_string_of_index ctx id1) ^ ")"
+  | ElaTyUnit -> "unit"
+  | ElaTyFloat -> "float"
+  | ElaTyVector (id1) -> "vec(" ^ (ela_string_of_index ctx id1) ^ ")"
+  | ElaTyMatrix (id1, id2) -> "mat(" ^ (ela_string_of_index ctx id1) ^ "," ^ (ela_string_of_index ctx id2) ^ ")"
+  | ElaTyProduct (ty1, ty2) -> "(" ^ (ela_string_of_type ctx ty1) ^ "*" ^ (ela_string_of_type ctx ty2) ^ ")"
+  | ElaTyArrow (ty1, ty2) -> "(" ^ (ela_string_of_type ctx ty1) ^ " -> " ^ (ela_string_of_type ctx ty2) ^ ")"
+  | ElaTyDepUni (a, sr1, ty1) ->
+    let (ctx', a') = ela_pick_fresh_name ctx a in
+    "(pi " ^ a' ^ ":"  ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_type ctx' ty1) ^ ")"
+  | ElaTyDepExi (a, sr1, ty1) ->
+    let (ctx', a') = ela_pick_fresh_name ctx a in
+    "(sig " ^ a' ^ ":" ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_type ctx' ty1) ^ ")"
+
+let rec ela_string_of_expr ctx ex =
+  match ex with
+  | ElaExVar (x, n) -> ela_index_to_name ctx x
+  | ElaExInt (i) -> string_of_int i
+  | ElaExBool (b) -> if b then "true" else "false"
+  | ElaExUnit -> "()"
+  | ElaExFloat (f) -> string_of_float f
+  | ElaExPair (ex1, ex2) -> "(" ^ (ela_string_of_expr ctx ex1) ^ "," ^ (ela_string_of_expr ctx ex2) ^ ")"
+  | ElaExIf (ex1, ex2, ex3) -> "(if " ^ (ela_string_of_expr ctx ex1) ^ " then " ^ (ela_string_of_expr ctx ex2) ^ " else " ^ (ela_string_of_expr ctx ex3) ^ ")"
+  | ElaExLet (x, ex1, ex2) -> "(let " ^ x ^ " = " ^ (ela_string_of_expr ctx ex1) ^ " in " ^ (ela_string_of_expr (ela_add_name ctx x) ex2) ^ ")"
+  | ElaExApp (ex1, ex2) -> "(" ^ (ela_string_of_expr ctx ex1) ^ " " ^ (ela_string_of_expr ctx ex2) ^ ")"
+  | ElaExAbs (x, ex1) ->
+    let (ctx', x') = ela_pick_fresh_name ctx x in
+    "(lam " ^ x' ^ "." ^ (ela_string_of_expr ctx' ex1) ^ ")"
+  | ElaExFix (f, tyf, ex1) -> "(fix " ^ f ^ ":" ^ (ela_string_of_type ctx tyf) ^ "." ^ (ela_string_of_expr (ela_add_name ctx f) ex1) ^ ")"
+  | ElaExDepAbs (a, sr1, ex1) ->
+    let (ctx', a') = ela_pick_fresh_name ctx a in
+    "(dep " ^ a' ^ ":" ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_expr ctx' ex1) ^ ")"
+  | ElaExAs (ex1, ty1) -> "(" ^ (ela_string_of_expr ctx ex1) ^ " : " ^ (ela_string_of_type ctx ty1) ^ ")"
+
+let rec ela_string_of_formula ctx fm = raise TODO
+
+let ela_string_of_command ctx cmd =
+  match cmd with
+  | ElaCmdEval (ex) -> (ela_string_of_expr ctx ex) ^ ";"
+  | ElaCmdVal (x, ex1) -> "val " ^ x ^ " = " ^ (ela_string_of_expr ctx ex1) ^ ";"
+  | ElaCmdVar (x, ty1) -> "declare " ^ x ^ " : " ^ (ela_string_of_type ctx ty1) ^ ";"
+  | ElaCmdSortAbb (a, sr1) -> "sort " ^ a ^ " = " ^ (ela_string_of_sort ctx sr1) ^ ";"
+  | ElaCmdTypeAbb (a, ty1) -> "type " ^ a ^ " = " ^ (ela_string_of_type ctx ty1) ^ ";"

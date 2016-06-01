@@ -112,3 +112,11 @@ val ela_unsubst_id_in_formula_top : int -> int -> string -> ela_formula -> ela_f
 val ela_convert_expr : ela_context -> ela_expr -> ela_expr
 
 val ela_transform_formula : ela_context -> ela_formula -> Z3.context -> (string * ela_sort) list -> Z3.Expr.expr
+
+val ela_string_of_index : ela_context -> ela_index -> string
+val ela_string_of_sort : ela_context -> ela_sort -> string
+val ela_string_of_type : ela_context -> ela_type -> string
+val ela_string_of_expr : ela_context -> ela_expr -> string
+val ela_string_of_formula : ela_context -> ela_formula -> string
+
+val ela_string_of_command : ela_context -> ela_command -> string
