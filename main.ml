@@ -35,8 +35,8 @@ let parse_file fn =
 let process fn ctx =
 	let t = parse_file fn in
 	print_raw t;print_newline ();
-	let tyT = typeof_solved prelude_ctx t in
-	let t' = eval prelude_ctx t in
+	let tyT = typeof_solved ctx t in
+	let t' = eval ctx t in
   	printtm t';print_newline ();printty tyT;print_newline()
 
 let main () =
@@ -56,7 +56,7 @@ let main () =
   let fm = get_sr_fm empty_ctx sr id in
   print_formula fm *)
 	let inFile = parseArgs() in
-	let _ = process inFile empty_ctx in
+	let _ = process inFile prelude_ctx in
   	()
 
 let () = main ()

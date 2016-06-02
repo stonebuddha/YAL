@@ -56,6 +56,9 @@ type formula =
   | FmVar of int
   | FmIntConst of int
   | FmAdd of formula * formula
+  | FmSub of formula * formula
+  | FmMul of formula * formula
+  | FmDiv of formula * formula
   | FmTrue
   | FmFalse
   | FmAnd of formula list
@@ -80,6 +83,7 @@ val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
 val get_type_from_context : context -> int -> ty
 val name2index : context -> string -> int
+val index2name : context -> int -> string
 val add_name : context -> string -> context
 
 val prelude_ctx : context
