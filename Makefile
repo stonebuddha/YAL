@@ -1,7 +1,7 @@
 OCB_FLAGS = -use-ocamlfind -use-menhir
 OCB = ocamlbuild $(OCB_FLAGS)
 
-all: native byte
+all: native byte elaboration
 
 clean:
 	$(OCB) -clean
@@ -11,6 +11,9 @@ native:
 
 byte:
 	$(OCB) main.byte
+
+elaboration:
+	$(OCB) elaboration.native
 
 profile: native
 	$(OCB) -tag profile main.native
