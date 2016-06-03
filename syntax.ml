@@ -60,6 +60,9 @@ type formula =
   | FmVar of int
   | FmIntConst of int
   | FmAdd of formula * formula
+  | FmSub of formula * formula
+  | FmMul of formula * formula
+  | FmDiv of formula * formula
   | FmTrue
   | FmFalse
   | FmAnd of formula list
@@ -180,19 +183,22 @@ let prmap onindex c pr =
   in
     walk c pr
 
-let fmmap onvar c fm =
+let fmmap onvar onargs c fm =
   let rec walk c fm =
     match fm with
     | FmVar(i) -> onvar c i
     | FmIntConst(_) -> fm
     | FmAdd(fm1,fm2) -> FmAdd(walk c fm1, walk c fm2)
+    | FmSub(fm1,fm2) -> FmSub(walk c fm1, walk c fm2)
+    | FmMul(fm1,fm2) -> FmMul(walk c fm1, walk c fm2)
+    | FmDiv(fm1,fm2) -> FmDiv(walk c fm1, walk c fm2)
     | FmTrue -> fm
     | FmFalse -> fm
     | FmAnd(args) -> FmAnd(List.map (fun fm1 -> walk c fm1) args)
     | FmOr(args) -> FmOr(List.map (fun fm1 -> walk c fm1) args)
     | FmNot(fm1) -> FmNot(walk c fm1)
-    | FmUni(args,fm1) -> FmUni(args, walk (c + 1) fm1)
-    | FmExi(args,fm1) -> FmExi(args, walk (c + 1) fm1)
+    | FmUni(args,fm1) -> FmUni(List.map (fun x -> onargs (c+1) x) args, walk (c + 1) fm1)
+    | FmExi(args,fm1) -> FmExi(List.map (fun x -> onargs (c+1) x) args, walk (c + 1) fm1)
     | FmEq(fm1, fm2) -> FmEq(walk c fm1, walk c fm2)
     | FmImply(fm1, fm2) -> FmImply(walk c fm1, walk c fm2)
     | FmLe(fm1, fm2) -> FmLe(walk c fm1, walk c fm2)
@@ -201,7 +207,9 @@ let fmmap onvar c fm =
 
 let shift_index_above d c id =
   idmap
-    (fun c a n -> if a >= c then IdVar (a + d, n + d) else IdVar (a, n + d))
+    (fun c a n -> if a >= c then 
+      if a + d < 0 then error "wrong format with +,-,*,/. Maybe you use second part of dependent pair without index." else IdVar (a + d, n + d) 
+      else IdVar (a, n + d))
     c id
 
 let shift_prop_above d c pr =
@@ -231,6 +239,7 @@ let shift_term_above d c tm =
 let shift_formula_above d c fm =
   fmmap
     (fun c a -> if a >= c then FmVar(a + d) else FmVar(a))
+    (fun c a -> if a >= c then a + d else a)
     c fm
 
 let shift_term d tm = shift_term_above d 0 tm
@@ -476,10 +485,10 @@ let rec printid id =
   match id with
   | IdVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
   | IdInt(i) -> pr " ";print_int i;pr " "
-  | IdAdd(id1,id2) -> pr " ";printid id1;pr "+";printid id2;pr " "
-  | IdSub(id1,id2) -> pr " ";printid id1;pr "-";printid id2;pr " "
-  | IdMul(id1,id2) -> pr " ";printid id1;pr "*";printid id2;pr " "
-  | IdDiv(id1,id2) -> pr " ";printid id1;pr "/";printid id2;pr " "
+  | IdAdd(id1,id2) -> pr " (";printid id1;pr "+";printid id2;pr ") "
+  | IdSub(id1,id2) -> pr " (";printid id1;pr "-";printid id2;pr ") "
+  | IdMul(id1,id2) -> pr " (";printid id1;pr "*";printid id2;pr ") "
+  | IdDiv(id1,id2) -> pr " (";printid id1;pr "/";printid id2;pr ") "
 
 let rec printpr pro =
   match pro with
@@ -528,6 +537,9 @@ let rec printfm fm =
   | FmVar(i) -> pr "[";pr (string_of_int i);pr "]"
   | FmIntConst(i) -> pr (string_of_int i)
   | FmAdd(fm1,fm2) -> pr "(";printfm fm1;pr " + ";printfm fm2;pr ")"
+  | FmSub(fm1,fm2) -> pr "(";printfm fm1;pr " - ";printfm fm2;pr ")"
+  | FmMul(fm1,fm2) -> pr "(";printfm fm1;pr " * ";printfm fm2;pr ")"
+  | FmDiv(fm1,fm2) -> pr "(";printfm fm1;pr " / ";printfm fm2;pr ")"
   | FmTrue -> pr "true"
   | FmFalse -> pr "false"
   | FmAnd(fms) ->
@@ -627,6 +639,7 @@ let prelude = [
 ("op-", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 3)), TyInt (IdVar (0, 3))), TyInt (IdSub (IdVar (1, 3), IdVar (0, 3))))))));
 ("op*", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 4)), TyInt (IdVar (0, 4))), TyInt (IdMul (IdVar (1, 4), IdVar (0, 4))))))));
 ("op/", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 5)), TyInt (IdVar (0, 5))), TyInt (IdDiv (IdVar (1, 5), IdVar (0, 5))))))));
+("iszero", (TyArrow (TyDepExi ("a", SrInt, TyInt (IdVar (0, 5))), TyBool)));
 ]
 
 let prelude_ctx =

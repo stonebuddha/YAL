@@ -12,18 +12,31 @@ let append_uniq l1 l2 =
       (fun x1 x2 -> if (x1 > x2) then 1 else if (x1 < x2) then -1 else 0)
       l3
 
-let rec get_id_fm ctx id =
+let rec id_op_routine ctx idx idy op = 
+  let (l1, f1) = get_id_fm ctx idx in
+  let (l2, f2) = get_id_fm ctx idy in
+  let l_new = List.append l1 l2 in
+  match op with 
+  | "+" -> (l_new, FmAdd(f1, f2))
+  | "-" -> (l_new, FmSub(f1, f2))
+  | "*" -> (l_new, FmMul(f1, f2))
+  | "/" -> (l_new, FmDiv(f1, f2))
+  | _ -> error "op for id can only be +,-,*,/"
+
+and get_id_fm ctx id =
   match id with
   | IdVar(x,_) ->
     ([x],FmVar(x))
   | IdInt(i) ->
     ([],FmIntConst(i))
   | IdAdd(x,y) ->
-    let (l1, f1) = get_id_fm ctx x in
-    let (l2, f2) = get_id_fm ctx y in
-    let l_new = List.append l1 l2 in
-    let f_new = FmAdd(f1,f2) in
-    (l_new, f_new) 
+    id_op_routine ctx x y "+"
+  | IdSub(x,y) ->
+    id_op_routine ctx x y "-"
+  | IdMul(x,y) ->
+    id_op_routine ctx x y "*"
+  | IdDiv(x,y) ->
+    id_op_routine ctx x y "/"
 
 let rec get_prop_fm ctx pro =
   match pro with
@@ -135,12 +148,11 @@ let rec typeof ctx t =
     let tyT = get_type_from_context ctx i in (tyT, FmTrue)
   | TmAbs(x,tyT1,t2) ->
       let ctx' = add_binding ctx x (BdType(tyT1)) in
-            printty tyT1;
       let (tyT2, f2) = typeof ctx' t2 in
       let tyT2_new = shift_type (-1) tyT2 in
       let f3 = shift_formula (-1) f2 in
       let tty = TyArrow(tyT1, tyT2_new) in
-      (tty, f2)
+      (tty, f3)
   | TmApp(t1,t2) ->
       let (tyT1, f1) = typeof ctx t1 in
       let (tyT2, f2) = typeof ctx t2 in
@@ -149,8 +161,8 @@ let rec typeof ctx t =
         let (l3, f3) = tyeqv ctx tyT2 tyT11 in 
         (match f3 with
         | FmFalse -> error "TmApp:parameter type mismatch"
-        | _ -> (tyT2, FmAnd([f1 ; f2 ; f3])))
-      | _ -> error "arrow type expected")
+        | _ -> (tyT12, FmAnd([f1 ; f2 ; f3])))
+      | _ -> error "TmApp: arrow type expected")
   | TmBool(_) -> 
       (TyBool, FmTrue)
   | TmIf(t1,t2,t3) ->
@@ -171,7 +183,8 @@ let rec typeof ctx t =
      let ctx' = add_binding ctx x (BdType(tyT1)) in
      let (tyT2,f2) = typeof ctx' t2 in
      let tyT22 = shift_type (-1) tyT2 in
-     (tyT22, FmAnd([f1;f2]))
+     let f3 = shift_formula (-1) f2 in
+     (tyT22, FmAnd([f1;f3]))
   | TmCase(t, cases) ->
       let (tyT, f1) = typeof ctx t in
       (try
@@ -199,7 +212,8 @@ let rec typeof ctx t =
         | NotConsistent -> error "types are not consistent in case branches"
       with Not_found -> error "no pattern matches with the term")
   | TmFix(x, tyT, t1) ->
-      let (tyT1,f1) = typeof ctx t1 in
+      let ctx' = add_binding ctx x (BdType tyT) in
+      let (tyT1,f1) = typeof ctx' t1 in
         (match tyT with 
             TyArrow(_,_) ->
               let (l2,f2) = tyeqv ctx tyT tyT1 in
@@ -216,8 +230,7 @@ let rec typeof ctx t =
   | TmDepAbs(x,sr1,t2) ->
       let ctx' = add_binding ctx x (BdSort(sr1)) in
       let (tyT2, f2) = typeof ctx' t2 in
-      let f_new = shift_formula (-1) f2 in
-      (TyDepUni(x, sr1, tyT2), f_new)
+      (TyDepUni(x, sr1, tyT2), f2)
   | TmDepApp(t1,id2) ->
       let (tyT1, f1) = typeof ctx t1 in
       (match tyT1 with
@@ -232,12 +245,7 @@ let rec typeof ctx t =
       | TyDepExi(_, sr, tyT1) ->
           let f1 = get_sr_fm ctx sr id in
           let (tyT11, f2) = typeof ctx t1 in
-          pr "par";
-          printty tyT1;
-          printty tyT11;
-          print_newline ();
           let tyT1' = subst_index_in_type_top id tyT1 in
-          printty tyT1';
           let (_, f3) = tyeqv ctx tyT11 tyT1' in
           (match f3 with
           | FmFalse -> error "type of pair mismatch"
@@ -246,22 +254,27 @@ let rec typeof ctx t =
   | TmDepLet(x1,x2,t1,t2) ->
      let (tyT1,f1) = typeof ctx t1 in
      (match tyT1 with
-      | TyDepExi(_, sr, tyT11) ->
-          let tyT11' = shift_type_above 1 1 tyT11 in
+      | TyDepExi(a, sr, tyT11) ->
           let ctx' = add_binding ctx x1 (BdSort(sr)) in
-          let ctx'' = add_binding ctx' x2 (BdType(tyT11')) in
+          let ctx'' = add_binding ctx' x2 (BdType(tyT11)) in
           let (tyT2,f2) = typeof ctx'' t2 in
+          print_raw_type tyT2;
+          print_newline ();
           let tyT22 = shift_type (-2) tyT2 in
-          let f3 = FmUni([1], f2) in
+          print_raw_type tyT22;
+          print_newline ();
+          let f2' = shift_formula (-1) f2 in
+          let f3 = FmExi([0], f2') in
           (tyT22, FmAnd([f1;f3]))
       | _ -> error "dependent existential type expected")
 
   let typeof_solved ctx t =
     let (tyT,fm) = typeof ctx t in
-    printfm fm;print_newline ();
+    printfm fm;print_newline ();printty tyT;print_newline ();
     let res = fm_solver fm in
     match res with
     | 1 -> tyT
     | 2 -> error "type unsatisfiable"
     | 3 -> error "type unknown"
+    | _ -> error "not reached"
 

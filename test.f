@@ -1,1 +1,1 @@
-let <id,x> = if true then <8,8:[a:int.int(a)]> else <5,5:[a:int.int(a)]> in <id,x:[b:int.int(b)]>
+(fix (f:[a:int.int(a)] -> [a:int.int(a)]) fn (x:[a:int.int(a)]) if (iszero x) then <1,1:[a:int.int(a)]> else let <id,y> = x in let <id2,z> = (f <id - 1, (y[id] - 1[1]):[a:int.int(a)]>) in <id * id2, (y[id] * z[id2]):[a:int.int(a)]> end end <5,5:[a:int.int(a)]>)
