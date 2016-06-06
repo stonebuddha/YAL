@@ -1,3 +1,4 @@
 S .
 B ./_build
 PKG z3
+PKG lacaml

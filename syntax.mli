@@ -21,11 +21,14 @@ type sort =
 type ty =
   | TyInt of index
   | TyBool
+  | TyFloat
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
   | TyDepUni of string * sort * ty
   | TyDepExi of string * sort * ty
+  | TyVector of index
+  | TyMatrix of index * index
 
 type pat =
   | PtWild
@@ -39,6 +42,7 @@ type term =
   | TmVar of int * int
   | TmInt of int
   | TmBool of bool
+  | TmFloat of float
   | TmUnit
   | TmPair of term * term
   | TmIf of term * term * term
@@ -51,6 +55,8 @@ type term =
   | TmDepApp of term * index
   | TmDepPair of index * term * ty
   | TmDepLet of string * string * term * term
+  | TmVector of term array
+  | TmMatrix of term array array
 
 type formula =
   | FmVar of int

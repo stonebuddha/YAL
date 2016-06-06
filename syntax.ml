@@ -1,6 +1,7 @@
 open Support.Pervasive
 open Support.Error
 open Format
+open Lacaml.D
 
 type index =
   | IdVar of int * int
@@ -25,11 +26,14 @@ type sort =
 type ty =
   | TyInt of index
   | TyBool
+  | TyFloat
   | TyUnit
   | TyProduct of ty * ty
   | TyArrow of ty * ty
   | TyDepUni of string * sort * ty
   | TyDepExi of string * sort * ty
+  | TyVector of index
+  | TyMatrix of index * index
 
 type pat =
   | PtWild
@@ -43,6 +47,7 @@ type term =
   | TmVar of int * int
   | TmInt of int
   | TmBool of bool
+  | TmFloat of float
   | TmUnit
   | TmPair of term * term
   | TmIf of term * term * term
@@ -55,6 +60,8 @@ type term =
   | TmDepApp of term * index
   | TmDepPair of index * term * ty
   | TmDepLet of string * string * term * term
+  | TmVector of term array
+  | TmMatrix of term array array
 
 type formula =
   | FmVar of int
@@ -123,6 +130,7 @@ let tmmap onvar ontype onindex onsort c tm =
     | TmVar (x, n) -> onvar c x n
     | TmInt (i) as tm -> tm
     | TmBool (b) as tm -> tm
+    | TmFloat(f) as tm -> tm
     | TmUnit as tm -> tm
     | TmPair (tm1, tm2) -> TmPair (walk c tm1, walk c tm2)
     | TmIf (tm1, tm2, tm3) -> TmIf (walk c tm1, walk c tm2, walk c tm3)
@@ -135,6 +143,8 @@ let tmmap onvar ontype onindex onsort c tm =
     | TmDepApp (tm1, id) -> TmDepApp (walk c tm1, onindex c id)
     | TmDepPair (id, tm1, ty) -> TmDepPair (onindex c id, walk c tm1, ontype c ty)
     | TmDepLet (a, x, tm1, tm2) -> TmDepLet (a, x, walk c tm1, walk (c + 2) tm2)
+    | TmVector (tms) -> TmVector (Array.map (fun x -> walk c x) tms)
+    | TmMatrix (tms) -> TmMatrix (Array.map (fun x -> Array.map (fun y -> walk c y) x) tms)
   in
     walk c tm
 
@@ -143,11 +153,14 @@ let tymap onindex onsort c ty =
     match ty with
     | TyInt (id) -> TyInt (onindex c id)
     | TyBool as ty -> ty
+    | TyFloat -> ty
     | TyUnit as ty -> ty
     | TyProduct (ty1, ty2) -> TyProduct (walk c ty1, walk c ty2)
     | TyArrow (ty1, ty2) -> TyArrow (walk c ty1, walk c ty2)
     | TyDepUni (x, sr, ty1) -> TyDepUni (x, onsort c sr, walk (c + 1) ty1)
     | TyDepExi (x, sr, ty1) -> TyDepExi (x, onsort c sr, walk (c + 1) ty1)
+    | TyVector (id) -> TyVector(onindex c id)
+    | TyMatrix (id1, id2) -> TyMatrix(onindex c id1, onindex c id2)
   in
     walk c ty
 
@@ -481,7 +494,7 @@ and printtm_ATerm outer ctx t = match t with
 
 let printtm ctx t = printtm_Term true ctx t *)
 
-let rec printid id =
+let rec printid id = 
   match id with
   | IdVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
   | IdInt(i) -> pr " ";print_int i;pr " "
@@ -509,16 +522,20 @@ let rec printty ty =
   | TyInt(id) -> pr " int(";printid id;pr ") "
   | TyBool -> pr " bool "
   | TyUnit -> pr " unit "
+  | TyFloat -> pr " float "
   | TyProduct(ty1,ty2) -> pr " (";printty ty1;pr " * ";printty ty2;pr ") "
   | TyArrow(ty1,ty2) -> pr " (";printty ty1;pr " -> ";printty ty2;pr ") "
   | TyDepUni(x,sr,ty1) -> pr " (Pi ";pr x;pr ":";printsr sr;pr ".";printty ty1;pr ") "
   | TyDepExi(x,sr,ty1) -> pr " (Sigma ";pr x;pr ":";printsr sr;pr ".";printty ty1;pr ") "
+  | TyVector(id) -> pr " Vector[";printid id;pr "] "
+  | TyMatrix(id1, id2) -> pr " Matrix[";printid id1;pr "][";printid id2;pr "]"
 
 let rec printtm t =
   match t with
   | TmVar(x,n) -> pr " [";print_int x;pr ",";print_int n;pr "] "
   | TmInt(i) -> pr " ";print_int i;pr " "
   | TmBool(b) -> pr " ";print_bool b;pr " "
+  | TmFloat(f) -> pr " ";print_float f;pr " "
   | TmUnit -> pr " () "
   | TmPair(t1,t2) -> pr " (";printtm t1;pr ",";printtm t2;pr ") "
   | TmIf(t1,t2,t3) -> pr " if ";printtm t1;pr " then ";printtm t2;pr " else ";printtm t3;pr " "
@@ -529,8 +546,10 @@ let rec printtm t =
   | TmFix(x,ty,t1) -> pr " fix ";pr x;pr ":";printty ty;pr " ";printtm t1;pr " "
   | TmDepAbs(x,sr,t1) -> pr " lambda ";pr x;pr ":";printsr sr;pr ".";printtm t1;pr " "
   | TmDepApp(t1,id) -> pr " ";printtm t1;pr " ";printid id;pr " "
-  | TmDepPair(id,t1,ty) -> pr " <";printid id;pr ",";printtm t1;pr ":";printty ty;pr "> "
+  | TmDepPair(id,t1,ty) -> pr " <";printtm t1;pr "> "
   | TmDepLet(x1,x2,t1,t2) -> pr " let <";pr x1;pr ",";pr x2;pr "> = ";printtm t1;pr " in ";printtm t2;pr " "
+  | TmVector(tms) -> pr " [";Array.iter (fun x -> printtm x;pr ";") tms;pr "] "
+  | TmMatrix(tms) -> pr " [";Array.iter (fun x -> Array.iter (fun y -> printtm y;pr ";") x;pr "\n") tms;pr "] "
 
 let rec printfm fm =
   match fm with
@@ -611,16 +630,20 @@ let rec print_raw_type ty =
   | TyInt(id) -> pr "TyInt(";print_raw_index id;pr ")"
   | TyBool -> pr "TyBool"
   | TyUnit -> pr "TyUnit"
+  | TyFloat -> pr "TyFloat"
   | TyProduct(ty1,ty2) -> pr "TyProduct(";print_raw_type ty1;pr ",";print_raw_type ty2;pr ")"
   | TyArrow(ty1,ty2) -> pr "TyArrow(";print_raw_type ty1;pr ",";print_raw_type ty2;pr ")"
   | TyDepUni(x,sr,ty1) -> pr "TyDepUni(";pr x;pr ",";print_raw_sort sr;pr ",";print_raw_type ty1;pr ")"
   | TyDepExi(x,sr,ty1) -> pr "TyDepExi(";pr x;pr ",";print_raw_sort sr;pr ",";print_raw_type ty1;pr ")"
+  | TyVector(id) -> pr "TyVector(";print_raw_index id;pr ")"
+  | TyMatrix(id1,id2) -> pr "TyMatrix(";print_raw_index id1; pr ",";print_raw_index id2;pr ")"
 
 let rec print_raw t =
   match t with
   | TmVar(x,n) -> pr "TmVar(";print_int x;pr ",";print_int n;pr ")"
   | TmInt(i) -> pr "TmInt(";print_int i; pr ")"
   | TmBool(b) -> pr "TmBool("; print_bool b; pr ")"
+  | TmFloat(f) -> pr "TmFloat(";print_float f;pr ")"
   | TmUnit -> pr "TmUnit"
   | TmPair(t1,t2) -> pr "(";print_raw t1;pr ",";print_raw t2;pr ")"
   | TmIf(t1,t2,t3) -> pr "TmIf(";print_raw t1;pr ",";print_raw t2;pr ",";print_raw t3;pr ")"
@@ -633,6 +656,8 @@ let rec print_raw t =
   | TmDepApp(t1,id) -> pr "TmDepApp(";print_raw t1;pr ",";print_raw_index id;pr ")"
   | TmDepPair(id,t1,ty) -> pr "TmDepPair(";print_raw_index id;pr ",";print_raw t1;pr ",";print_raw_type ty;pr ")"
   | TmDepLet(x1,x2,t1,t2) -> pr "TmDepLet(";pr x1;pr ",";pr x2;pr ",";print_raw t1;pr ",";print_raw t2;pr ")"
+  | TmVector(tms) -> pr "TmVector(";Array.iter (fun x -> print_raw x;pr ",") tms;pr ")"
+  | TmMatrix(tms) -> pr "TmMatrix(";Array.iter (fun x -> pr "[";Array.iter (fun y -> printtm y;pr ",") x;pr "]") tms;pr ")"
 
 let prelude = [
 ("op+", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 2)), TyInt (IdVar (0, 2))), TyInt (IdAdd (IdVar (1, 2), IdVar (0, 2))))))));
@@ -640,6 +665,30 @@ let prelude = [
 ("op*", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 4)), TyInt (IdVar (0, 4))), TyInt (IdMul (IdVar (1, 4), IdVar (0, 4))))))));
 ("op/", (TyDepUni ("a", SrInt, TyDepUni ("b", SrInt, TyArrow (TyProduct (TyInt (IdVar (1, 5)), TyInt (IdVar (0, 5))), TyInt (IdDiv (IdVar (1, 5), IdVar (0, 5))))))));
 ("iszero", (TyArrow (TyDepExi ("a", SrInt, TyInt (IdVar (0, 5))), TyBool)));
+("vector_get", (TyDepUni("a", SrInt, TyDepUni("b", SrSubset("c", SrInt, 
+  PrAnd(PrLe(IdInt(0), IdVar(0, 2)), PrNeg(PrLe(IdVar(1, 2), IdVar(0, 2))))), 
+  TyArrow(TyProduct(TyVector(IdVar(1, 2)), TyInt(IdVar(0, 2))), TyFloat)))));
+("vector_set", (TyDepUni("a", SrInt, TyDepUni("b", SrSubset("c", SrInt, 
+  PrAnd(PrLe(IdInt(0), IdVar(0, 2)), PrNeg(PrLe(IdVar(1, 2), IdVar(0, 2))))),
+  TyArrow(TyProduct(TyProduct(TyVector(IdVar(1, 2)), TyInt(IdVar(0, 2))), TyFloat), TyVector(IdVar(1, 2)))))));
+("vector_append", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyArrow(
+  TyProduct(TyVector(IdVar(1, 2)), TyVector(IdVar(0, 2))), TyVector(IdAdd(IdVar(1, 2), IdVar(0, 2))))))));
+("dot", (TyDepUni("a", SrInt, TyArrow(TyProduct(TyVector(IdVar(0, 1)), TyVector(IdVar(0, 1))), TyFloat))));
+("gemv", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyArrow(
+  TyProduct(TyMatrix(IdVar(1, 2), IdVar(0, 2)), TyVector(IdVar(0, 2))), TyVector(IdVar(1, 2)))))));
+("gemm", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyDepUni("c", SrInt, TyArrow(
+  TyProduct(TyMatrix(IdVar(2, 3), IdVar(1, 3)), TyMatrix(IdVar(1, 3), IdVar(0, 3))), TyMatrix(IdVar(2, 3), IdVar(0, 3))))))));
+("transpose", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyArrow(
+  TyMatrix(IdVar(1, 2), IdVar(0, 2)), TyMatrix(IdVar(0, 2), IdVar(1, 2)))))));
+("matrix_get", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyDepUni("c", SrSubset("c1", SrInt,
+  PrAnd(PrLe(IdInt(0), IdVar(0, 3)), PrNeg(PrLe(IdVar(2, 3), IdVar(0, 3))))), TyDepUni("d", SrSubset("d1", SrInt,
+  PrAnd(PrLe(IdInt(0), IdVar(0, 3)), PrNeg(PrLe(IdVar(2, 3), IdVar(0, 3))))), TyArrow(
+  TyProduct(TyProduct(TyMatrix(IdVar(3, 4), IdVar(2, 4)), TyInt(IdVar(1, 4))), TyInt(IdVar(0, 4))), TyFloat)))))));
+("matrix_set", (TyDepUni("a", SrInt, TyDepUni("b", SrInt, TyDepUni("c", SrSubset("c1", SrInt,
+  PrAnd(PrLe(IdInt(0), IdVar(0, 3)), PrNeg(PrLe(IdVar(2, 3), IdVar(0, 3))))), TyDepUni("d", SrSubset("d1", SrInt,
+  PrAnd(PrLe(IdInt(0), IdVar(0, 3)), PrNeg(PrLe(IdVar(2, 3), IdVar(0, 3))))), TyArrow(
+  TyProduct(TyProduct(TyProduct(TyMatrix(IdVar(3, 4), IdVar(2, 4)), TyInt(IdVar(1, 4))), TyInt(IdVar(0, 4))), TyFloat), 
+  TyMatrix(IdVar(3, 4), IdVar(2, 4)))))))));
 ]
 
 let prelude_ctx =

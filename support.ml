@@ -50,7 +50,7 @@ module Pervasive = struct
 
 type info = Error.info
 
-let pr = Format.print_string
+let pr = print_string
 
 end (* module pervasive *)
 

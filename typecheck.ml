@@ -95,6 +95,7 @@ let rec tyeqv ctx tyS tyT =
       let l3 = append_uniq l1 l2 in
       (l3, FmAnd(arg))
   | (TyBool,TyBool) -> ([], FmTrue)
+  | (TyFloat, TyFloat) -> ([], FmTrue)
   | (TyInt(id1), TyInt(id2)) ->
       ideqv ctx id1 id2
   | (TyProduct(tyS1,tyS2),TyProduct(tyT1,tyT2)) ->
@@ -113,6 +114,13 @@ let rec tyeqv ctx tyS tyT =
       let ctx' = add_binding ctx x1 (BdSort(sr1)) in
       let (l2, f2) = tyeqv ctx' ty1 ty2 in
       ([], FmUni(l2, FmAnd([f1; FmImply(f3, f2)])))
+  | (TyVector(id1), TyVector(id2)) ->
+      ideqv ctx id1 id2
+  | (TyMatrix(id1, id2), TyMatrix(id3, id4)) ->
+      let (l1, f1) = ideqv ctx id1 id3 in
+      let (l2, f2) = ideqv ctx id2 id4 in
+      let l3 = append_uniq l1 l2 in
+      (l3, FmAnd([f1;f2]))
   | _ -> ([], FmFalse)
 
 let rec concrete_tyeqv ctx tyS tyT =
@@ -121,10 +129,15 @@ let rec concrete_tyeqv ctx tyS tyT =
   | (TyInt(IdInt(i1)), TyInt(IdInt(i2))) -> 
       if i1 = i2 then true else false
   | (TyBool, TyBool) -> true
+  | (TyFloat, TyFloat) -> true
   | (TyArrow(tyS1,tyS2),TyArrow(tyT1,tyT2)) -> 
       (concrete_tyeqv ctx tyS1 tyT1) && (concrete_tyeqv ctx tyS2 tyT2)
   | (TyProduct(tyS1,tyS2),TyProduct(tyT1,tyT2)) ->
       (concrete_tyeqv ctx tyS1 tyT1) && (concrete_tyeqv ctx tyS2 tyT2)
+  | (TyVector(IdInt(i1)), TyVector(IdInt(i2))) ->
+      if i1 = i2 then true else false
+  | (TyMatrix(IdInt(i1), IdInt(i2)), TyMatrix(IdInt(i3), IdInt(i4))) ->
+      if (i1 = i3) && (i2 = i4) then true else false
   | _ -> false
 
 let rec patcheck ctx p tyT =
@@ -158,6 +171,11 @@ let rec typeof ctx t =
       let (tyT2, f2) = typeof ctx t2 in
       (match tyT1 with
       | TyArrow(tyT11,tyT12) ->
+      pr "ffff:";
+      print_raw_type tyT2;
+      print_newline ();
+      print_raw_type tyT11;
+      print_newline ();
         let (l3, f3) = tyeqv ctx tyT2 tyT11 in 
         (match f3 with
         | FmFalse -> error "TmApp:parameter type mismatch"
@@ -165,6 +183,8 @@ let rec typeof ctx t =
       | _ -> error "TmApp: arrow type expected")
   | TmBool(_) -> 
       (TyBool, FmTrue)
+  | TmFloat(_) ->
+      (TyFloat, FmTrue)
   | TmIf(t1,t2,t3) ->
     let (tyT1, f1) = typeof ctx t1 in
       if concrete_tyeqv ctx tyT1 TyBool
@@ -258,19 +278,43 @@ let rec typeof ctx t =
           let ctx' = add_binding ctx x1 (BdSort(sr)) in
           let ctx'' = add_binding ctx' x2 (BdType(tyT11)) in
           let (tyT2,f2) = typeof ctx'' t2 in
-          print_raw_type tyT2;
-          print_newline ();
           let tyT22 = shift_type (-2) tyT2 in
-          print_raw_type tyT22;
-          print_newline ();
           let f2' = shift_formula (-1) f2 in
-          let f3 = FmExi([0], f2') in
+          let f3 = FmUni([0], f2') in
           (tyT22, FmAnd([f1;f3]))
       | _ -> error "dependent existential type expected")
+  | TmVector(tms) ->
+      let fms_arr = Array.map (fun x -> 
+              let (tyT, f1) = typeof ctx x in
+              if concrete_tyeqv ctx tyT TyFloat then f1
+              else error "elements in vector should be floats") tms in
+      let fms = Array.to_list fms_arr in
+      let len = Array.length tms in
+      (TyVector(IdInt(len)), FmAnd(fms))
+  | TmMatrix(tms) ->
+      let _ = 
+        let rec inner x =
+          let len = Array.length tms.(x) in
+          if x = (Array.length tms) - 1 then len
+          else 
+            let res  = inner (x + 1) in
+            if len = res then len else error "each row of matrix should be of same size"
+        in if (Array.length tms) = 0 then 0 else inner 0
+      in ();
+      let fms_arr2 = Array.map (fun x ->
+                    Array.map (fun y ->
+              let (tyT, f1) = typeof ctx y in
+              if concrete_tyeqv ctx tyT TyFloat then f1
+              else error "elements in matrix should be floats") x) tms in
+      let fms_arr = Array.to_list fms_arr2 in
+      let fms = List.flatten (List.map Array.to_list fms_arr) in
+      let len1 = Array.length tms in
+      let len2 = (if len1 = 0 then 0 else Array.length tms.(0)) in
+      (TyMatrix(IdInt(len1), IdInt(len2)), FmAnd(fms))
 
   let typeof_solved ctx t =
     let (tyT,fm) = typeof ctx t in
-    printfm fm;print_newline ();printty tyT;print_newline ();
+    print_string "formula: ";printfm fm;print_newline ();print_string "type: ";printty tyT;print_newline ();
     let res = fm_solver fm in
     match res with
     | 1 -> tyT

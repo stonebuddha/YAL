@@ -3,14 +3,16 @@ open Parser
 }
 
 let white = [' ' '\009' '\012']
-let int = ['0'-'9']+
+let int = '-'?['0'-'9']+
 let id = ['A'-'Z' 'a'-'z' '_'] ['A'-'Z' 'a'-'z' '_' '0'-'9' '\'']*
+let float = ['0'-'9']+'.'['0'-'9']*
 
 rule read =
   parse
   | white+            { read lexbuf }
   | white*("\r")?"\n" { read lexbuf }
   | int               { INTV (int_of_string (Lexing.lexeme lexbuf)) }
+  | float             { FLOATV (float_of_string (Lexing.lexeme lexbuf)) }
   | "true"            { TRUE }
   | "false"           { FALSE }
   | "if"              { IF }
@@ -23,7 +25,10 @@ rule read =
   | "lam"             { LAM }
   | "int"             { INT }
   | "bool"            { BOOL }
+  | "float"           { FLOAT }
   | "unit"            { UNIT }
+  | "vector"          { VECTOR }
+  | "matrix"          { MATRIX }
   | "end"             { END }
   | id                { ID (Lexing.lexeme lexbuf) }
   | "->"              { RIGHTARROW }
@@ -48,3 +53,4 @@ rule read =
   | "|"               { BAR }
   | "*"               { TIMES }
   | "."               { DOT }
+  | ";"               { SEMI }

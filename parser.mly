@@ -4,6 +4,7 @@ open Syntax
 
 %token <int> INTV
 %token <string> ID
+%token <float> FLOATV
 %token TRUE
 %token FALSE
 %token IF
@@ -16,6 +17,7 @@ open Syntax
 %token LAM
 %token INT
 %token BOOL
+%token FLOAT
 %token UNIT
 %token END
 %token RIGHTARROW
@@ -40,6 +42,9 @@ open Syntax
 %token DOT
 %token AND
 %token OR
+%token SEMI
+%token VECTOR
+%token MATRIX
 
 %right RIGHTARROW
 %right OR
@@ -94,6 +99,8 @@ ty:
     { fun ctx -> TyInt (i ctx) }
   | BOOL
     { fun ctx -> TyBool }
+  | FLOAT
+    { fun ctx -> TyFloat }
   | UNIT
     { fun ctx -> TyUnit }
   | t1 = ty; TIMES; t2 = ty
@@ -104,8 +111,38 @@ ty:
     { fun ctx -> TyDepUni (a, s ctx, t (add_name ctx a)) }
   | LSQUARE; a = ID; COLON; s = sort; DOT; t = ty; RSQUARE
     { fun ctx -> TyDepExi (a, s ctx, t (add_name ctx a)) }
+  | VECTOR; LSQUARE; i = index; RSQUARE
+    { fun ctx -> TyVector(i ctx) }
+  | MATRIX; LSQUARE; i1 = index; RSQUARE; LSQUARE; i2 = index; RSQUARE
+    { fun ctx -> TyMatrix(i1 ctx, i2 ctx) }
   ;
 
+vvelements:
+  | t1 = term
+    { fun ctx -> [|t1 ctx|] }
+  | t1 = term; SEMI; e = vvelements
+    { fun ctx -> Array.append [|t1 ctx|] (e ctx) }
+  ;
+
+velements:
+    { fun ctx -> [||] }
+  | e = vvelements
+    { fun ctx -> e ctx }
+  ;
+
+mmelements:
+  | LSQUARE; BAR; v = velements; BAR; RSQUARE
+    { fun ctx -> [|v ctx|] }
+  | LSQUARE; BAR; v = velements; BAR; RSQUARE; SEMI; m = mmelements
+    { fun ctx -> Array.append [|v ctx|] (m ctx) }
+  ;
+
+
+melements:
+    { fun ctx -> [|[||]|] }
+  | m = mmelements
+    { fun ctx -> m ctx }
+  ;
 
 term:
   | x = ID
@@ -116,6 +153,8 @@ term:
     { fun ctx -> TmBool (true) }
   | FALSE
     { fun ctx -> TmBool (false) }
+  | f = FLOATV
+    { fun ctx -> TmFloat (f) }
   | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; PLUS; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
     { fun ctx -> TmApp (TmDepApp (TmDepApp (TmVar (name2index ctx "op+", ctx_length ctx), i1 ctx), i2 ctx), TmPair (t1 ctx, t2 ctx)) }
   | LPAREN; t1 = term; LSQUARE; i1 = index; RSQUARE; MINUS; t2 = term; LSQUARE; i2 = index; RSQUARE; RPAREN
@@ -146,6 +185,10 @@ term:
     { fun ctx -> TmDepPair (i ctx, b ctx, t ctx) }
   | LET; LT; a = ID; COMMA; x = ID; GT; EQ; t1 = term; IN; t2 = term
     { fun ctx -> TmDepLet (a, x, t1 ctx, t2 (add_name (add_name ctx a) x)) }
+  | LSQUARE; BAR; v = velements; BAR; RSQUARE
+    { fun ctx -> TmVector (v ctx) }
+  | LCURLY; m = melements; RCURLY
+    { fun ctx -> TmMatrix (m ctx) }
   | LPAREN; t = term; RPAREN
     { t }
   ;
