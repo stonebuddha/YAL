@@ -502,14 +502,27 @@ let rec
     (match ty1' with
      | ElaTyArrow (ty11, ty12) ->
        let fm2 = _check ctx ex2 ty11 in
-       (ty12,
-        ElaFmConj
-          (fm1,
-           List.fold_right
-             (fun (s, sr) acc ->
-                let (ssr, pr) = ela_split_sort ctx sr in
-                ElaFmExists (s, ssr, ElaFmConj (ElaFmProp (pr), acc)))
-             free fm2))
+       let fm2' = List.fold_right
+           (fun (s, sr) acc ->
+              let (ssr, pr) = ela_split_sort ctx sr in
+              ElaFmExists (s, ssr,
+                           ElaFmConj (ElaFmProp
+                                        (ela_subst_index_in_index_top
+                                           (ElaIdId (s)) pr),
+                                      acc)))
+           free fm2 in
+       let (fm2'', subst) = ela_eleminate ctx fm2' in
+       let ty12' = List.fold_right
+           (fun (s, id) acc ->
+              ela_subst_index_in_type_top
+                id
+                (ela_unsubst_id_in_type_top
+                   (ela_ctx_length ctx)
+                   0
+                   s
+                   (ela_shift_type 1 acc)))
+           subst ty12 in
+       (ty12', ElaFmConj (fm1, fm2''))
      | _ -> raise (Error "_synthesize"))
   | ElaExFix (f, ty1, ex1) ->
     let fm = _check (ela_add_binding ctx f (ElaBdVar ty1)) ex1 (ela_shift_type 1 ty1) in
@@ -709,13 +722,17 @@ let experiment_main () =
       let ex1' = ela_convert_expr ctx ex1 in
       let (ty, fm) = _synthesize ctx ex1' in
       print_string (ela_string_of_type ctx ty); print_newline ();
-      print_string (ela_string_of_formula ctx fm); print_newline ();
+      let (fm', _) = ela_eleminate ctx fm in
+      (*print_string (ela_string_of_formula ctx fm'); print_newline ();*)
+      ela_check_formula ctx fm';
       ctx
     | ElaCmdVal (x, ex1) ->
       let ex1' = ela_convert_expr ctx ex1 in
       let (ty, fm) = _synthesize ctx ex1' in
       print_string (ela_string_of_type ctx ty); print_newline ();
-      print_string (ela_string_of_formula ctx fm); print_newline ();
+      let (fm', _) = ela_eleminate ctx fm in
+      print_string (ela_string_of_formula ctx fm'); print_newline ();
+      ela_check_formula ctx fm';
       ela_add_binding ctx x (ElaBdVar ty)
     | ElaCmdVar (x, ty1) -> ela_add_binding ctx x (ElaBdVar ty1)
     | ElaCmdSortAbb (a, sr1) -> ela_add_binding ctx a (ElaBdSortAbb sr1)
