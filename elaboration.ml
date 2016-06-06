@@ -531,8 +531,28 @@ let ela_process_cmd ctx cmd =
   | ElaCmdSortAbb (a, sr1) -> ela_add_binding ctx a (ElaBdSortAbb sr1)
   | ElaCmdTypeAbb (a, ty1) -> ela_add_binding ctx a (ElaBdTypeAbb ty1)
 
+let ela_searchpath = ref [""]
+
+let ela_arg_defs = [
+  "-I",
+  Arg.String (fun f -> ela_searchpath := f :: !ela_searchpath),
+  "Append a directory to the search path"]
+
+let ela_parse_args () =
+  let in_file = ref (None : string option) in
+  Arg.parse ela_arg_defs
+    (fun s ->
+       match !in_file with
+       | Some(_) -> raise (Error "You must specify exactly one input file")
+       | None -> in_file := Some(s))
+    "";
+  match !in_file with
+  | None -> raise (Error "You must specify an input file")
+  | Some(s) -> s
+
 let main () =
-  let (cmds, _) = ela_parse_file "elab.f" in
+  let in_file = ela_parse_args () in
+  let (cmds, _) = ela_parse_file in_file in
   let _ = List.fold_left ela_process_cmd ela_prelude_ctx cmds in
   ()
 
