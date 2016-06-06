@@ -592,7 +592,17 @@ let rec ela_string_of_expr ctx ex =
     "(dep " ^ a' ^ ":" ^ (ela_string_of_sort ctx sr1) ^ "." ^ (ela_string_of_expr ctx' ex1) ^ ")"
   | ElaExAs (ex1, ty1) -> "(" ^ (ela_string_of_expr ctx ex1) ^ " : " ^ (ela_string_of_type ctx ty1) ^ ")"
 
-let rec ela_string_of_formula ctx fm = raise TODO
+let rec ela_string_of_formula ctx fm =
+  match fm with
+  | ElaFmTop -> "true"
+  | ElaFmBot -> "false"
+  | ElaFmProp (pr1) -> ela_string_of_index ctx pr1
+  | ElaFmConj (fm1, fm2) -> "(" ^ (ela_string_of_formula ctx fm1) ^ " /\\ " ^ (ela_string_of_formula ctx fm2) ^ ")"
+  | ElaFmImply (pr1, fm2) -> "(" ^ (ela_string_of_index ctx pr1) ^ " => " ^ (ela_string_of_formula ctx fm2) ^ ")"
+  | ElaFmEqv (id1, id2) -> "(" ^ (ela_string_of_index ctx id1) ^ " = " ^ (ela_string_of_index ctx id2) ^ ")"
+  | ElaFmForall (a, sr1, fm1) -> "(forall " ^ a ^ ":" ^ (ela_string_of_sort ctx sr1) ^ ". " ^ (ela_string_of_formula (ela_add_name ctx a) fm1) ^ ")"
+  | ElaFmExists (s, sr1, fm1) -> "(exists " ^ s ^ ":" ^ (ela_string_of_sort ctx sr1) ^ ". " ^ (ela_string_of_formula ctx fm1) ^ ")"
+  | ElaFmScope (fm1) -> ela_string_of_formula (ela_add_name ctx "%scope") fm1
 
 let ela_string_of_command ctx cmd =
   match cmd with

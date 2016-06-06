@@ -445,6 +445,151 @@ and
                  acc)))
         free' (ElaFmConj (fm, fm'))
 
+(* experiments *)
+
+let rec
+
+  _synthesize ctx ex =
+  (*print_string "~~~~ "; print_string (ela_string_of_expr ctx ex); print_newline ();*)
+  match ex with
+  | ElaExVar(x, n) ->
+    (match ela_get_binding ctx x with
+     | ElaBdVar (ty) -> (ty, ElaFmTop)
+     | _ -> raise (Error "_synthesize"))
+  | ElaExInt (c) -> (ElaTyInt (ElaIdInt (c)), ElaFmTop)
+  | ElaExBool (b) -> (ElaTyBool (ElaIdBool (b)), ElaFmTop)
+  | ElaExUnit -> (ElaTyUnit, ElaFmTop)
+  | ElaExFloat (f) -> (ElaTyFloat, ElaFmTop)
+  | ElaExPair (ex1, ex2) ->
+    let (ty1, fm1) = _synthesize ctx ex1 in
+    let (ty2, fm2) = _synthesize ctx ex2 in
+    (ElaTyProduct (ty1, ty2), ElaFmConj (fm1, fm2))
+  | ElaExLet (x, ex1, ex2) ->
+    let (ty1, fm1) = _synthesize ctx ex1 in
+    let rec unwrap ty1 ctx cnt =
+      let ty1 = ela_unwrap_type_abb ctx ty1 in
+      (match ty1 with
+       | ElaTyDepExi (a, sr1, ty11) ->
+         unwrap ty11 (ela_add_binding ctx a (ElaBdIndex sr1)) (cnt + 1)
+       | _ -> (ty1, ctx, cnt)) in
+    let (ty1', ctx', cnt) = unwrap ty1 ctx 0 in
+    let ctx'' = ela_add_binding ctx' x (ElaBdVar ty1') in
+    let ex2' = ela_shift_expr_above cnt 1 ex2 in
+    let (ty2, fm2) = _synthesize ctx'' ex2' in
+    let rec wrap ty1 ty2 fm2 ctx =
+      (match ela_unwrap_type_abb ctx ty1 with
+       | ElaTyDepExi (a, sr1, ty11) ->
+         let (ssr1, pr1) = ela_split_sort ctx sr1 in
+         let (ty2', fm2') =
+           wrap ty11 ty2 fm2 (ela_add_binding ctx a (ElaBdIndex sr1)) in
+         (ElaTyDepExi (a, sr1, ty2'),
+          ElaFmForall (a, ssr1, ElaFmImply (pr1, fm2')))
+       | _ -> (ty2, fm2)) in
+    let (ty2', fm2') = wrap ty1 (ela_shift_type (-1) ty2) (ElaFmScope (fm2)) ctx in
+    (ty2', ElaFmConj (fm1, fm2'))
+  | ElaExApp (ex1, ex2) ->
+    let (ty1, fm1) = _synthesize ctx ex1 in
+    let rec unwrap ty1 free =
+      let ty1 = ela_unwrap_type_abb ctx ty1 in
+      (match ty1 with
+       | ElaTyDepUni (a, sr1, ty11) ->
+         let s = ela_gensym () in
+         let id = ElaIdId (s) in
+         let ty11' = ela_subst_index_in_type_top id ty11 in
+         unwrap ty11' ((s, sr1) :: free)
+       | _ -> (ty1, free)) in
+    let (ty1', free) = unwrap ty1 [] in
+    (match ty1' with
+     | ElaTyArrow (ty11, ty12) ->
+       let fm2 = _check ctx ex2 ty11 in
+       (ty12,
+        ElaFmConj
+          (fm1,
+           List.fold_right
+             (fun (s, sr) acc ->
+                let (ssr, pr) = ela_split_sort ctx sr in
+                ElaFmExists (s, ssr, ElaFmConj (ElaFmProp (pr), acc)))
+             free fm2))
+     | _ -> raise (Error "_synthesize"))
+  | ElaExFix (f, ty1, ex1) ->
+    let fm = _check (ela_add_binding ctx f (ElaBdVar ty1)) ex1 (ela_shift_type 1 ty1) in
+    (ty1, ElaFmScope (fm))
+  | ElaExAs (ex1, ty1) ->
+    let fm = _check ctx ex1 ty1 in
+    (ty1, fm)
+  | _ -> raise (Error "_synthesize")
+
+and
+
+  _check ctx ex ty =
+  (*print_string "???? "; print_string (ela_string_of_expr ctx ex); print_newline ();*)
+  match ex with
+  | ElaExIf (ex1, ex2, ex3) ->
+    let (ty1, fm1) = _synthesize ctx ex1 in
+    let ty1' = ela_unwrap_type_abb ctx ty1 in
+    let fm2 = _check ctx ex2 ty in
+    let fm3 = _check ctx ex3 ty in
+    (match ty1' with
+     | ElaTyBool (id1) ->
+       let fm =
+         ElaFmConj
+           (fm1,
+            ElaFmConj
+              (ElaFmImply (id1, fm2),
+               ElaFmImply (ElaIdUnop (ElaUnNot, id1), fm3))) in
+       fm
+     | _ -> raise (Error "_check"))
+  | ElaExAbs (x, ex1) ->
+    let ty' = ela_unwrap_type_abb ctx ty in
+    (match ty' with
+     | ElaTyArrow (ty1, ty2) ->
+       let fm1 =
+         _check
+           (ela_add_binding ctx x (ElaBdVar ty1))
+           ex1
+           (ela_shift_type 1 ty2) in
+       ElaFmScope (fm1)
+     | _ -> raise (Error "_check"))
+  | ElaExDepAbs (a, sr1, ex1) ->
+    let ty' = ela_unwrap_type_abb ctx ty in
+    (match ty' with
+     | ElaTyDepUni (a', sr1', ty1) ->
+       let (ssr1, pr1) = ela_split_sort ctx sr1 in
+       let (ssr1', pr1') = ela_split_sort ctx sr1' in
+       if ssr1 = ssr1' then
+         let fm1 =
+           _check (ela_add_binding ctx a (ElaBdIndex (sr1))) ex1 ty1 in
+         ElaFmForall
+           (a, ssr1, ElaFmConj (ela_eqv_prop pr1 pr1', ElaFmImply (pr1, fm1)))
+       else
+         raise (Error "_check")
+     | _ -> raise (Error "_check"))
+  | ElaExLet (x, ex1, ex2) ->
+    let (ty1, fm1) = _synthesize ctx ex1 in
+    let rec unwrap ty1 ctx cnt =
+      let ty1 = ela_unwrap_type_abb ctx ty1 in
+      (match ty1 with
+       | ElaTyDepExi (a, sr1, ty11) ->
+         unwrap ty11 (ela_add_binding ctx a (ElaBdIndex sr1)) (cnt + 1)
+       | _ -> (ty1, ctx, cnt)) in
+    let (ty1', ctx', cnt) = unwrap ty1 ctx 0 in
+    let ctx'' = ela_add_binding ctx' x (ElaBdVar ty1') in
+    let ex2' = ela_shift_expr_above cnt 1 ex2 in
+    let fm2 = _check ctx'' ex2' (ela_shift_type (cnt + 1) ty) in
+    let rec wrap ty1 fm2 ctx =
+      (match ela_unwrap_type_abb ctx ty1 with
+       | ElaTyDepExi (a, sr1, ty11) ->
+         let (ssr1, pr1) = ela_split_sort ctx sr1 in
+         let fm2' = wrap ty11 fm2 (ela_add_binding ctx a (ElaBdIndex sr1)) in
+         ElaFmForall (a, ssr1, ElaFmImply (pr1, fm2'))
+       | _ -> fm2) in
+    let fm2' = wrap ty1 (ElaFmScope (fm2)) ctx in
+    ElaFmConj (fm1, fm2')
+  | _ ->
+    let (ty1, fm1) = _synthesize ctx ex in
+    let fm2 = ela_coerce ctx ty1 ty in
+    ElaFmConj (fm1, fm2)
+
 let ela_parse_file fn =
   let pi = open_in fn in
   let lexbuf = Lexing.from_channel pi in
@@ -556,4 +701,28 @@ let main () =
   let _ = List.fold_left ela_process_cmd ela_prelude_ctx cmds in
   ()
 
-let () = main ()
+let experiment_main () =
+  let process_cmd ctx cmd =
+    print_string (ela_string_of_command ctx cmd); print_newline ();
+    (match cmd with
+    | ElaCmdEval (ex1) ->
+      let ex1' = ela_convert_expr ctx ex1 in
+      let (ty, fm) = _synthesize ctx ex1' in
+      print_string (ela_string_of_type ctx ty); print_newline ();
+      print_string (ela_string_of_formula ctx fm); print_newline ();
+      ctx
+    | ElaCmdVal (x, ex1) ->
+      let ex1' = ela_convert_expr ctx ex1 in
+      let (ty, fm) = _synthesize ctx ex1' in
+      print_string (ela_string_of_type ctx ty); print_newline ();
+      print_string (ela_string_of_formula ctx fm); print_newline ();
+      ela_add_binding ctx x (ElaBdVar ty)
+    | ElaCmdVar (x, ty1) -> ela_add_binding ctx x (ElaBdVar ty1)
+    | ElaCmdSortAbb (a, sr1) -> ela_add_binding ctx a (ElaBdSortAbb sr1)
+    | ElaCmdTypeAbb (a, ty1) -> ela_add_binding ctx a (ElaBdTypeAbb ty1)) in
+  let in_file = ela_parse_args () in
+  let (cmds, _) = ela_parse_file in_file in
+  let _ = List.fold_left process_cmd ela_prelude_ctx cmds in
+  ()
+
+let () = experiment_main ()
