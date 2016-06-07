@@ -616,7 +616,7 @@ let ela_z3solver = Z3.Solver.mk_solver ela_z3ctx None
 
 let ela_check_formula ctx fm =
   let res = ela_transform_formula ctx fm ela_z3ctx [] in
-  print_string (Z3.Expr.to_string res); print_newline ();
+  (*print_string (Z3.Expr.to_string res); print_newline ();*)
   let _ = Z3.Solver.reset ela_z3solver in
   let _ = Z3.Solver.add ela_z3solver [res] in
   let q = Z3.Solver.check ela_z3solver [] in
@@ -731,7 +731,7 @@ let experiment_main () =
       let (ty, fm) = _synthesize ctx ex1' in
       print_string (ela_string_of_type ctx ty); print_newline ();
       let (fm', _) = ela_eleminate ctx fm in
-      print_string (ela_string_of_formula ctx fm'); print_newline ();
+      (*print_string (ela_string_of_formula ctx fm'); print_newline ();*)
       ela_check_formula ctx fm';
       ela_add_binding ctx x (ElaBdVar ty)
     | ElaCmdVar (x, ty1) -> ela_add_binding ctx x (ElaBdVar ty1)
