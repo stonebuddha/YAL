@@ -34,7 +34,7 @@ let parse_file fn =
 
 let process fn ctx =
 	let t = parse_file fn in
-	print_string "parse result: ";print_raw t;print_newline ();
+	(* print_string "parse result: ";print_raw t;print_newline (); *)
 	let tyT = typeof_solved ctx t in
 	let t' = eval ctx t in
   	print_string "final result: ";printtm t';print_newline ();printty tyT;print_newline()

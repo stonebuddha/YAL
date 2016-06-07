@@ -88,6 +88,7 @@ val ctx_length : context -> int
 val add_binding : context -> string -> binding -> context
 val get_binding : context -> int -> binding
 val get_type_from_context : context -> int -> ty
+val get_sort_from_context : context -> int -> sort
 val name2index : context -> string -> int
 val index2name : context -> int -> string
 val add_name : context -> string -> context
@@ -120,8 +121,10 @@ val printtm : term -> unit
 val printty : ty -> unit
 val printfm : formula -> unit
 val printid : index -> unit
+val printsr : sort -> unit
 
 val print_raw : term -> unit
 val print_raw_index : index -> unit
 val print_raw_sort : sort -> unit
 val print_raw_type : ty -> unit
+val print_raw_prop : prop -> unit

@@ -56,26 +56,17 @@ let rec get_prop_fm ctx pro =
       let (l2,f2) = get_id_fm ctx id2 in
       FmLe(f1, f2)
 
-let rec get_sr_fm ctx sr id =
-  match sr with
-  | SrInt -> FmTrue
-  | SrSubset(x,sr2,pr) ->
-      let fsr = get_sr_fm ctx sr2 id in
-      let pr' = subst_index_in_prop_top id pr in
-      let fpr = get_prop_fm ctx pr' in
-      FmAnd([fsr;fpr])
-
-let rec get_sr_fm_r ctx sr =
+let rec get_sr_fm ctx sr =
   match sr with
   | SrInt -> FmTrue
   | SrSubset(x,sr2,pro) ->
-      let fsr = get_sr_fm_r ctx sr2 in
+      let fsr = get_sr_fm ctx sr2 in
       let fpr = get_prop_fm ctx pro in
       FmAnd([fsr;fpr])
 
 let rec sreqv ctx srS srT =
-  let fmS = get_sr_fm_r ctx srS in
-  let fmT = get_sr_fm_r ctx srT in
+  let fmS = get_sr_fm ctx srS in
+  let fmT = get_sr_fm ctx srT in
   (fmS, FmAnd([FmImply(fmS, fmT);FmImply(fmT,fmS)]))
 
 let rec ideqv ctx idS idT =
@@ -140,6 +131,71 @@ let rec concrete_tyeqv ctx tyS tyT =
       if (i1 = i3) && (i2 = i4) then true else false
   | _ -> false
 
+let rec sr_id_fm ctx sr id =
+  match sr with
+  | SrInt -> FmTrue
+  | SrSubset(x,sr2,pro) ->
+      let fsr = sr_id_fm ctx sr2 id in
+      let pr' = subst_index_in_prop_top id pro in
+      let fpr = get_prop_fm ctx pr' in
+      FmAnd([fsr;fpr])
+
+and get_id_var_sort_fm ctx id = 
+  match id with
+  | IdVar(x,_) ->
+    let sr = get_sort_from_context ctx x in
+    let f1 = sr_id_fm ctx sr id in
+    [f1]
+  | IdAdd(x,y) ->
+    let x' = get_id_var_sort_fm ctx x in
+    let y' = get_id_var_sort_fm ctx y in
+    List.append x' y'
+  | IdSub(x,y) ->
+    let x' = get_id_var_sort_fm ctx x in
+    let y' = get_id_var_sort_fm ctx y in
+    List.append x' y'
+  | IdMul(x,y) ->
+    let x' = get_id_var_sort_fm ctx x in
+    let y' = get_id_var_sort_fm ctx y in
+    List.append x' y'
+  | IdDiv(x,y) ->
+    let x' = get_id_var_sort_fm ctx x in
+    let y' = get_id_var_sort_fm ctx y in
+    List.append x' y'
+  | IdInt(_) -> [FmTrue]
+
+and get_prop_var_sort_fm ctx pro =
+  match pro with
+  | PrNeg(pr1) -> get_prop_var_sort_fm ctx pr1
+  | PrAnd(pr1, pr2) -> 
+      let l1 = get_prop_var_sort_fm ctx pr1 in
+      let l2 = get_prop_var_sort_fm ctx pr2 in
+      List.append l1 l2
+  | PrOr(pr1, pr2) -> 
+      let l1 = get_prop_var_sort_fm ctx pr1 in
+      let l2 = get_prop_var_sort_fm ctx pr2 in
+      List.append l1 l2
+  | PrLe(id1, id2) -> 
+      let l1 = get_id_var_sort_fm ctx id1 in
+      let l2 = get_id_var_sort_fm ctx id2 in
+      List.append l1 l2
+  | _ -> []
+
+let rec match_sr_id ctx sr id =
+  (* print_string "match:";print_raw_sort sr;print_newline();print_raw_index id;print_newline (); *)
+  match sr with
+  | SrInt -> FmTrue
+  | SrSubset(x,sr2,pr) ->
+      let fsr = match_sr_id ctx sr2 id in
+      let l1 = get_id_var_sort_fm ctx id in
+      let pr' = subst_index_in_prop_top id pr in
+      let fpr = get_prop_fm ctx pr' in
+      let l2 = get_prop_var_sort_fm ctx pr' in
+      let l3 = List.append l1 l2 in
+      let f1' = if (List.length l3) = 1 then List.hd l3 else FmAnd(l3) in
+      FmAnd([fsr;FmImply(f1',fpr)])
+
+
 let rec patcheck ctx p tyT =
   match p with
   | PtInt(p1) -> 
@@ -171,11 +227,6 @@ let rec typeof ctx t =
       let (tyT2, f2) = typeof ctx t2 in
       (match tyT1 with
       | TyArrow(tyT11,tyT12) ->
-      pr "ffff:";
-      print_raw_type tyT2;
-      print_newline ();
-      print_raw_type tyT11;
-      print_newline ();
         let (l3, f3) = tyeqv ctx tyT2 tyT11 in 
         (match f3 with
         | FmFalse -> error "TmApp:parameter type mismatch"
@@ -255,7 +306,7 @@ let rec typeof ctx t =
       let (tyT1, f1) = typeof ctx t1 in
       (match tyT1 with
           TyDepUni(_, sr11,tyT12) ->
-          let f2 = get_sr_fm ctx sr11 id2 in
+          let f2 = match_sr_id ctx sr11 id2 in
           (match f2 with
           | FmFalse -> error "TmDepApp:parameter type mismatch"
           | _ -> (subst_index_in_type_top id2 tyT12, FmAnd([f1;f2])))
@@ -263,7 +314,7 @@ let rec typeof ctx t =
   | TmDepPair(id,t1,tyT) ->
       (match tyT with
       | TyDepExi(_, sr, tyT1) ->
-          let f1 = get_sr_fm ctx sr id in
+          let f1 = match_sr_id ctx sr id in
           let (tyT11, f2) = typeof ctx t1 in
           let tyT1' = subst_index_in_type_top id tyT1 in
           let (_, f3) = tyeqv ctx tyT11 tyT1' in
@@ -280,7 +331,8 @@ let rec typeof ctx t =
           let (tyT2,f2) = typeof ctx'' t2 in
           let tyT22 = shift_type (-2) tyT2 in
           let f2' = shift_formula (-1) f2 in
-          let f3 = FmUni([0], f2') in
+          let f4 = get_sr_fm ctx sr in
+          let f3 = FmUni([0], FmImply(f4,f2')) in
           (tyT22, FmAnd([f1;f3]))
       | _ -> error "dependent existential type expected")
   | TmVector(tms) ->
@@ -314,7 +366,7 @@ let rec typeof ctx t =
 
   let typeof_solved ctx t =
     let (tyT,fm) = typeof ctx t in
-    print_string "formula: ";printfm fm;print_newline ();print_string "type: ";printty tyT;print_newline ();
+    (* print_string "formula: ";printfm fm;print_newline ();print_string "type: ";printty tyT;print_newline (); *)
     let res = fm_solver fm in
     match res with
     | 1 -> tyT

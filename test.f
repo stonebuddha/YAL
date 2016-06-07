@@ -1,3 +1,1 @@
-let <id,x> = <2, <3,{[|1.0;2.0;3.0|];[|4.0;5.0;6.0|]}:[b:int.matrix[2][b]]>:[a:int.[b:int.matrix[a][b]]]> in
-let <id2,y> = x in
-<id, x:[a:int.[b:int.matrix[a][b]]]>
+(fix (f:[a:int.int(a)] -> [a:int.int(a)]) fn (x:[a:int.int(a)]) if (iszero x) then <1,1:[a:int.int(a)]> else let <id,y> = x in let <id2,z> = (f <id - 1, (y[id] - 1[1]):[a:int.int(a)]>) in <id * id2, (y[id] * z[id2]):[a:int.int(a)]> end end <5,5:[a:int.int(a)]>)

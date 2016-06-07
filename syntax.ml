@@ -345,6 +345,13 @@ let get_type_from_context ctx i =
        ("get_type_from_context: Wrong kind of binding for variable "
          ^ (index2name ctx i))
 
+let get_sort_from_context ctx i =
+   match get_binding ctx i with
+         BdSort(sr) -> sr
+     | _ -> error
+       ("get_sort_from_context: Wrong kind of binding for variable "
+         ^ (index2name ctx i))
+
 (* ---------------------------------------------------------------------- *)
 (* Printing *)
 
@@ -583,6 +590,7 @@ let rec printfm fm =
       pr "(";printfm fm1;pr " <= ";printfm fm2;pr ")"
   | FmUni(l,fm1) ->
       pr "( for any ";
+      print_int (List.length l);
       List.iter (fun x -> pr "[";pr (string_of_int x);pr "]") l;
       pr ".";
       printfm fm1;

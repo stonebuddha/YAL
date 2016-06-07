@@ -1,0 +1,78 @@
+！！！！！每次只能处理一个term
+
+lambda计算
+1）结果为<9>:Sigma b:int.int(b+1)
+([lam {c:int} fn (x:[a:int.int(a + c)]) x end end 1] <8,9:[b:int.int(b+1)]>)
+
+2）Sigma a:int.int(a+2) 和Sigma b:int.int(b+1)类型不匹配，type error
+([lam {c:int} fn (x:[a:int.int(a + c)]) x end end 2] <8,9:[b:int.int(b+1)]>)
+
+3）9和int(8+2)类型不匹配,type error
+([lam {c:int} fn (x:[a:int.int(a + c)]) x end end 2] <8,9:[b:int.int(b+2)]>)
+
+then和else后面语句类型不一样，type error
+if true then <5,5:[a:int.int(a)]> else <3,4:[a:int.int(a+1)]>
+
+阶乘计算 5! = <120>:Sigma a:int.int(a)
+(fix (f:[a:int.int(a)] -> [a:int.int(a)]) fn (x:[a:int.int(a)]) if (iszero x) then <1,1:[a:int.int(a)]> else let <id,y> = x in let <id2,z> = (f <id - 1, (y[id] - 1[1]):[a:int.int(a)]>) in <id * id2, (y[id] * z[id2]):[a:int.int(a)]> end end <5,5:[a:int.int(a)]>)
+
+Dependent let 结果为<6>:Sigma a:int.int(a)
+let <id,x> = if true then <5,5:[a:int.int(a)]> else <3,3:[a:int.int(a)]> in <id + 1, (x[id] + 1[1]):[a:int.int(a)]>
+
+在类型检查阶段就可以检查出的数组越界错误
+1）<2,2>的类型无法保证不会数组越界，type error
+let <idl,x> = <4, [|1.0;2.0;3.0;4.0|]:[a:{b:int|4<=b && b<=4}.vector[a]]> in
+let <id,y> = <2,2:[a:int.int(a)]> in
+([[vector_get idl] id] (x,y))
+
+2）<2,2>的类型限定其值在[0,2]之间，满足[0,3]之间的不越界标准。结果为3:float
+let <idl,x> = <4, [|1.0;2.0;3.0;4.0|]:[a:{b:int|4<=b && b<=4}.vector[a]]> in
+let <id,y> = <2,2:[a:{b:int|0<=b&&~3<=b}.int(a)]> in
+([[vector_get idl] id] (x,y))
+
+3）下标4越界 type error
+let <idl,x> = <4, [|1.0;2.0;3.0;4.0|]:[a:{b:int|4<=b && b<=4}.vector[a]]> in
+let <id,y> = <4,4:[a:{b:int|0<=b&&~4<=b}.int(a)]> in
+([[vector_get idl] id] (x,y))
+
+4) 下标-1越界 type error
+let <idl,x> = <4, [|1.0;2.0;3.0;4.0|]:[a:{b:int|4<=b && b<=4}.vector[a]]> in
+let <id,y> = <-1,-1:[a:{b:int|0<=b&&~4<=b}.int(a)]> in
+([[vector_get idl] id] (x,y))
+
+对矩阵乘法操作，在类型检查阶段就检查是否可行
+1) 两个vector相乘 32:float
+let <idx,x> = <3,[|1.0;2.0;3.0|]:[a:{b:int|3<=b&&b<=3}.vector[a]]> in
+let <idy,y> = <3,[|4.0;5.0;6.0|]:[a:{b:int|3<=b&&b<=3}.vector[a]]> in
+([dot idx] (x,y))
+
+或直接
+([dot 3] ([|1.0;2.0;3.0|],[|4.0;5.0;6.0|]))
+
+2）type error
+let <idx,x> = <3,[|1.0;2.0;3.0|]:[a:{b:int|3<=b&&b<=3}.vector[a]]> in
+let <idy,y> = <4,[|4.0;5.0;6.0;7.0|]:[a:{b:int|4<=b&&b<=4}.vector[a]]> in
+([dot idx] (x,y))
+
+3) 两个matrix相乘 [14. ; 19. ; 24. ][ 28. ; 38. ; 48] : Matrix[ 2 ][ 3 ]
+let <idx,x> = <2,{[|2.0;3.0|];[|4.0;6.0|]}:[a:{b:int|2<=b&&b<=2}.matrix[2][a]]> in
+let <idy,y> = <3,{[|1.0;2.0;3.0|];[|4.0;5.0;6.0|]}:[a:{b:int|3<=b&&b<=3}.matrix[2][a]]> in
+<2,<idy,([[[gemm 2] idx] idy] (x,y)):[a:int.matrix[2][a]]>:[a:int.[b:int.matrix[a][b]]]>
+
+或直接
+([[[gemm 2] 2] 3] ({[|2.0;3.0|];[|4.0;6.0|]},{[|1.0;2.0;3.0|];[|4.0;5.0;6.0|]}))
+
+注意使用let时，结果为一个依赖二元组，而不是只有二元组的第二部分。即以下式子会出错
+let <idx,x> = <2,{[|2.0;3.0|];[|4.0;6.0|]}:[a:{b:int|2<=b&&b<=2}.matrix[2][a]]> in
+let <idy,y> = <3,{[|1.0;2.0;3.0|];[|4.0;5.0;6.0|]}:[a:{b:int|3<=b&&b<=3}.matrix[2][a]]> in
+([[[gemm 2] idx] idy] (x,y))
+
+4) type error
+let <idx,x> = <2,{[|2.0;3.0;6.0|];[|4.0;6.0;2.0|]}:[a:{b:int|2<=b&&b<=2}.matrix[2][a]]> in
+let <idy,y> = <3,{[|1.0;2.0;3.0|];[|4.0;5.0;6.0|]}:[a:{b:int|3<=b&&b<=3}.matrix[2][a]]> in
+<2,<idy,([[[gemm 2] idx] idy] (x,y)):[a:int.matrix[2][a]]>:[a:int.[b:int.matrix[a][b]]]>
+
+或直接
+([[[gemm 2] 3] 3] ({[|2.0;3.0;6.0|];[|4.0;6.0;2.0|]},{[|1.0;2.0;3.0;4.0|];[|4.0;5.0;6.0;8.0|]}))
+
+矩阵的转置transpose和矩阵向量相乘gemv类似。
