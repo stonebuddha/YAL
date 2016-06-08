@@ -50,3 +50,4 @@ declare some_b : bool;
 let b = some_b in
   (if b then [not b] else b : bool(false));
 fun inc {a:int} (x:int(a)) : int(a + 1) = x + 1;
+[inc [inc c]];
